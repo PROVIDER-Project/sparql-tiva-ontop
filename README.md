@@ -18,6 +18,7 @@ FDVA_2022.csv  ──►  DuckDB  (./run/tiva.duckdb, table `tiva`)
 
 ## Open TODOS
 
+* Vocabulary still uses example namespace. Needs consolidation.
 * Tiva Areas are NOT countries; therefore a mapping tiva-area -> country iso3 code is needed - e.g. via overlapsWith.
 
 ## Requirements
