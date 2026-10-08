@@ -1,0 +1,667 @@
+# R2RML mapping for the annual TiVA table in DuckDB.
+# All column-based literals have explicit RDF datatypes.
+# Static cube metadata is mapped from SELECT 1, so it is queryable too.
+@prefix rr: <http://www.w3.org/ns/r2rml#> .
+
+@prefix ex: <https://example.org/tiva/vocab/> .
+
+@prefix res: <https://example.org/tiva/> .
+
+@prefix qb: <http://purl.org/linked-data/cube#> .
+
+@prefix sdmx-dimension: <http://purl.org/linked-data/sdmx/2009/dimension#> .
+
+@prefix sdmx-attribute: <http://purl.org/linked-data/sdmx/2009/attribute#> .
+
+@prefix sdmx-measure: <http://purl.org/linked-data/sdmx/2009/measure#> .
+
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+@prefix dct: <http://purl.org/dc/terms/> .
+
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<https://example.org/tiva/mapping/tiva-observations-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DATAFLOW, MEASURE, CAST(TIME_PERIOD AS VARCHAR) AS YEAR, VALUE_ADDED_SOURCE_AREA, VALUE_ADDED_SOURCE_ACTIVITY, FINAL_DEMAND_AREA, FINAL_DEMAND_ACTIVITY, OBS_VALUE, UNIT_MEASURE, UNIT_MULT, FREQ FROM tiva WHERE OBS_VALUE IS NOT NULL" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/observation/{DATAFLOW}/{MEASURE}/{FREQ}/{YEAR}/{VALUE_ADDED_SOURCE_AREA}/{VALUE_ADDED_SOURCE_ACTIVITY}/{FINAL_DEMAND_AREA}/{FINAL_DEMAND_ACTIVITY}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:Observation ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:dataSet ;
+        rr:objectMap [ rr:template "https://example.org/tiva/dataset/{DATAFLOW}" ; rr:termType rr:IRI ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate ex:indicator ;
+        rr:objectMap [ rr:template "https://example.org/tiva/indicator/{MEASURE}" ; rr:termType rr:IRI ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate sdmx-dimension:refPeriod ;
+        rr:objectMap [ rr:column "YEAR" ; rr:termType rr:Literal ; rr:datatype xsd:gYear ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate sdmx-dimension:freq ;
+        rr:objectMap [ rr:template "https://example.org/tiva/frequency/{FREQ}" ; rr:termType rr:IRI ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate ex:valueAddedSourceArea ;
+        rr:objectMap [ rr:template "https://example.org/tiva/area/{VALUE_ADDED_SOURCE_AREA}" ; rr:termType rr:IRI ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate ex:valueAddedSourceActivity ;
+        rr:objectMap [ rr:template "https://example.org/tiva/activity/{VALUE_ADDED_SOURCE_ACTIVITY}" ; rr:termType rr:IRI ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate ex:finalDemandArea ;
+        rr:objectMap [ rr:template "https://example.org/tiva/area/{FINAL_DEMAND_AREA}" ; rr:termType rr:IRI ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate ex:finalDemandActivity ;
+        rr:objectMap [ rr:template "https://example.org/tiva/activity/{FINAL_DEMAND_ACTIVITY}" ; rr:termType rr:IRI ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate sdmx-measure:obsValue ;
+        rr:objectMap [ rr:column "OBS_VALUE" ; rr:termType rr:Literal ; rr:datatype xsd:double ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate sdmx-attribute:unitMeasure ;
+        rr:objectMap [ rr:template "https://example.org/tiva/unit/{UNIT_MEASURE}" ; rr:termType rr:IRI ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate sdmx-attribute:unitMult ;
+        rr:objectMap [ rr:template "https://example.org/tiva/unit-multiplier/{UNIT_MULT}" ; rr:termType rr:IRI ]
+    ] .
+
+<https://example.org/tiva/mapping/tiva-datasets-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT DATAFLOW FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/dataset/{DATAFLOW}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DataSet ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate dct:identifier ;
+        rr:objectMap [ rr:column "DATAFLOW" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:structure ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/structure/fdva> ]
+    ] .
+
+<https://example.org/tiva/mapping/source-areas-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT VALUE_ADDED_SOURCE_AREA AS CODE FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/area/{CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:notation ;
+        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:inScheme ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/area> ]
+    ] .
+
+<https://example.org/tiva/mapping/demand-areas-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT FINAL_DEMAND_AREA AS CODE FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/area/{CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:notation ;
+        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:inScheme ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/area> ]
+    ] .
+
+<https://example.org/tiva/mapping/source-activities-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT VALUE_ADDED_SOURCE_ACTIVITY AS CODE FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/activity/{CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:notation ;
+        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:inScheme ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/activity> ]
+    ] .
+
+<https://example.org/tiva/mapping/demand-activities-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT FINAL_DEMAND_ACTIVITY AS CODE FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/activity/{CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:notation ;
+        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:inScheme ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/activity> ]
+    ] .
+
+<https://example.org/tiva/mapping/indicators-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT MEASURE AS CODE FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/indicator/{CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:notation ;
+        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:inScheme ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/indicator> ]
+    ] .
+
+<https://example.org/tiva/mapping/frequencies-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT FREQ AS CODE FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/frequency/{CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:notation ;
+        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:inScheme ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/frequency> ]
+    ] .
+
+<https://example.org/tiva/mapping/units-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT UNIT_MEASURE AS CODE FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/unit/{CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:notation ;
+        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:inScheme ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/unit> ]
+    ] .
+
+<https://example.org/tiva/mapping/unit-multipliers-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT UNIT_MULT FROM tiva" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/unit-multiplier/{UNIT_MULT}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:notation ;
+        rr:objectMap [ rr:column "UNIT_MULT" ; rr:termType rr:Literal ; rr:datatype xsd:integer ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate skos:inScheme ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/unit-multiplier> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/structure/fdva> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DataStructureDefinition ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/indicator> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/period> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/frequency> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/source-area> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/source-activity> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/demand-area> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/demand-activity> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/value> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/unit> ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:component ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/component/multiplier> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-2> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/indicator> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:dimension ;
+        rr:objectMap [ rr:constant ex:indicator ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:order ;
+        rr:objectMap [ rr:constant 1 ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-3> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:indicator ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DimensionProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:codeList ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/indicator> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-4> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/period> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:dimension ;
+        rr:objectMap [ rr:constant sdmx-dimension:refPeriod ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:order ;
+        rr:objectMap [ rr:constant 2 ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-5> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-dimension:refPeriod ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DimensionProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant xsd:gYear ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-6> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/frequency> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:dimension ;
+        rr:objectMap [ rr:constant sdmx-dimension:freq ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:order ;
+        rr:objectMap [ rr:constant 3 ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-7> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-dimension:freq ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DimensionProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:codeList ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/frequency> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-8> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/source-area> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:dimension ;
+        rr:objectMap [ rr:constant ex:valueAddedSourceArea ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:order ;
+        rr:objectMap [ rr:constant 4 ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-9> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:valueAddedSourceArea ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DimensionProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:codeList ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/area> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-10> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/source-activity> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:dimension ;
+        rr:objectMap [ rr:constant ex:valueAddedSourceActivity ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:order ;
+        rr:objectMap [ rr:constant 5 ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-11> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:valueAddedSourceActivity ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DimensionProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:codeList ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/activity> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-12> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/demand-area> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:dimension ;
+        rr:objectMap [ rr:constant ex:finalDemandArea ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:order ;
+        rr:objectMap [ rr:constant 6 ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-13> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:finalDemandArea ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DimensionProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:codeList ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/area> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-14> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/demand-activity> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:dimension ;
+        rr:objectMap [ rr:constant ex:finalDemandActivity ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:order ;
+        rr:objectMap [ rr:constant 7 ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-15> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant ex:finalDemandActivity ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:DimensionProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:codeList ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/activity> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-16> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/value> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:measure ;
+        rr:objectMap [ rr:constant sdmx-measure:obsValue ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-17> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-measure:obsValue ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:MeasureProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant xsd:double ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-18> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/unit> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:attribute ;
+        rr:objectMap [ rr:constant sdmx-attribute:unitMeasure ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:componentRequired ;
+        rr:objectMap [ rr:constant true ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-19> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-attribute:unitMeasure ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:AttributeProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:codeList ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/unit> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-20> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/component/multiplier> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:ComponentSpecification ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:attribute ;
+        rr:objectMap [ rr:constant sdmx-attribute:unitMult ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:componentRequired ;
+        rr:objectMap [ rr:constant true ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-21> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant sdmx-attribute:unitMult ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant rdf:Property ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant qb:AttributeProperty ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdfs:range ;
+        rr:objectMap [ rr:constant skos:Concept ]
+    ] ;
+    rr:predicateObjectMap [
+        rr:predicate qb:codeList ;
+        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/unit-multiplier> ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-22> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/scheme/indicator> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:ConceptScheme ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-23> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/scheme/frequency> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:ConceptScheme ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-24> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/scheme/area> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:ConceptScheme ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-25> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/scheme/activity> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:ConceptScheme ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-26> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/scheme/unit> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:ConceptScheme ]
+    ] .
+
+<https://example.org/tiva/mapping/cube-structure-27> a rr:TriplesMap ;
+    rr:logicalTable [ rr:sqlQuery "SELECT 1 AS singleton" ] ;
+    rr:subjectMap [ rr:constant <https://example.org/tiva/scheme/unit-multiplier> ] ;
+    rr:predicateObjectMap [
+        rr:predicate rdf:type ;
+        rr:objectMap [ rr:constant skos:ConceptScheme ]
+    ] .
+
