@@ -16,6 +16,10 @@ FDVA_2022.csv  ──►  DuckDB  (./run/tiva.duckdb, table `tiva`)
                          └──►  SPARQL  http://localhost:8080
 ```
 
+## Open TODOS
+
+* Tiva Areas are NOT countries; therefore a mapping tiva-area -> country iso3 code is needed - e.g. via overlapsWith.
+
 ## Requirements
 
 - Docker + Docker Compose
