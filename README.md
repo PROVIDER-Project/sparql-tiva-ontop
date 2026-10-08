@@ -2,7 +2,7 @@
 
 Serve OECD **TIVA** (Trade in Value Added) annual statistics as a virtual Linked Data graph and query them with **SPARQL**.
 
-The data is never transformed into RDF. Instead, [Ontop](https://ontop-vkg.org/) (an ontology-based data access engine) maps a relational table in **DuckDB** to an **SDMX / QB** data cube on the fly, so every SPARQL query is rewritten into SQL against the database.
+The data is never materialized as RDF. Instead, [Ontop](https://ontop-vkg.org/) (an ontology-based data access engine) maps a relational table in **DuckDB** to an **SDMX / QB** data cube on the fly, so every SPARQL query is rewritten into SQL against the database.
 
 ## How it fits together
 
