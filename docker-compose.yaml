@@ -18,6 +18,7 @@ services:
       ONTOP_LOG_LEVEL: "debug"
       ONTOP_MAPPING_FILE: /opt/ontop/input/tiva.r2rml.ttl
       ONTOP_PROPERTIES_FILE: /opt/ontop/input/tiva.properties
+      ONTOP_CONSTRAINT_FILE: /opt/ontop/input/tiva-constraints.lst
     volumes:
       - ./ontop:/opt/ontop/input:ro
       - ./jdbc:/opt/ontop/jdbc:ro
