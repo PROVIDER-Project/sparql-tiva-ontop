@@ -1,8 +1,31 @@
 services:
-  duckdb:
+  fetch:
+    image: curlimages/curl:8.10.1
+    user: "0"
+    command: >
+      sh -c 'set -e;
+      zst=/data/FDVA.csv.zst;
+      jar=/jdbc/duckdb_jdbc-1.5.6.0.jar;
+      [ -s "$$zst" ] || curl -fL --retry 3 -o "$$zst" "https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/oecd/tiva/FDVA_2019-2022/1/FDVA_2019-2022-1-FDVA_2022.csv.zst";
+      [ -s "$$jar" ] || curl -fL --retry 3 -o "$$jar" "https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar";
+      echo "fetch: ready"'
+    volumes:
+      - ./data:/data
+      - ./jdbc:/jdbc
+
+  load:
     image: duckdb/duckdb:1.5.6
+    depends_on:
+      fetch:
+        condition: service_completed_successfully
     working_dir: /workspace
     entrypoint: ["duckdb"]
+    command:
+      - tiva.duckdb
+      - -c
+      - "CREATE OR REPLACE TABLE tiva (DATAFLOW VARCHAR, MEASURE VARCHAR, TIME_PERIOD INTEGER, VALUE_ADDED_SOURCE_AREA VARCHAR, VALUE_ADDED_SOURCE_ACTIVITY VARCHAR, FINAL_DEMAND_AREA VARCHAR, FINAL_DEMAND_ACTIVITY VARCHAR, OBS_VALUE DOUBLE, UNIT_MEASURE VARCHAR, UNIT_MULT INTEGER, FREQ VARCHAR);"
+      - -c
+      - "INSERT INTO tiva SELECT * FROM read_csv('/data/FDVA.csv.zst', header=true);"
     volumes:
       - ./data:/data:ro
       - ./run:/workspace
@@ -10,11 +33,12 @@ services:
   ontop:
     image: ontop/ontop:5.5.0
     restart: unless-stopped
+    depends_on:
+      load:
+        condition: service_completed_successfully
     ports:
-      #- "127.0.0.1:8080:8080"
       - "8080:8080"
     environment:
-      #ONTOP_MAPPING_FILE: /opt/ontop/input/tiva.obda
       ONTOP_LOG_LEVEL: "debug"
       ONTOP_MAPPING_FILE: /opt/ontop/input/tiva.r2rml.ttl
       ONTOP_PROPERTIES_FILE: /opt/ontop/input/tiva.properties
@@ -23,4 +47,3 @@ services:
       - ./ontop:/opt/ontop/input:ro
       - ./jdbc:/opt/ontop/jdbc:ro
       - ./run:/data:ro
-

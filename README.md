@@ -7,7 +7,7 @@ The data is never materialized as RDF. Instead, [Ontop](https://ontop-vkg.org/) 
 ## How it fits together
 
 ```
-FDVA_2022.csv  ──►  DuckDB  (./run/tiva.duckdb, table `tiva`)
+FDVA.csv.zst  (downloaded by `fetch`)  ──►  DuckDB  (./run/tiva.duckdb, table `tiva`)
                          │
                          │  read-only JDBC
                          ▼
@@ -23,72 +23,63 @@ FDVA_2022.csv  ──►  DuckDB  (./run/tiva.duckdb, table `tiva`)
 
 ## Requirements
 
-- Docker + Docker Compose
+- Docker + Docker Compose (v2, for `depends_on` with `condition`)
 
-## 1. Download the data
+The first start downloads the dataset (~421MB, zstd-compressed) into `./data/` and builds the database into `./run/` (about 400MB), so allow a few hundred MB of free space.
 
-Grab the OECD TIVA *Final Demand Value Added by Activity* (FDVA) CSV and drop it into `./data/`:
-
-- [Data Explorer – TIVA 2025 edition](https://data-explorer.oecd.org/vis?pg=0&bp=true&tm=%22%28TIVA%29%202025%20edition%22&snb=5&df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_TIVA_FDVA%40DF_FDVA&df[ag]=OECD.STI.PIE&df[vs]=1.1&dq=.._T.W._T..A&pd=2015,&to[TIME_PERIOD]=false)
-- [FDVA 2019–2022 (zip)](https://webfs-sti.oecd.org/files/STI-PIE/TIVA/2025/FDVA/FDVA_2019-2022.zip)
-
-For example, copy `FDVA_2022.csv` to `./data`.
-
-## 2. Load it into DuckDB
-
-Start a DuckDB shell:
+## Start the endpoint
 
 ```bash
-docker compose run --rm duckdb duckdb tiva.duckdb
+docker compose up -d
 ```
 
-Inside the shell, load the CSV into the `tiva` table:
+This runs three services in order:
 
-```sql
-CREATE TABLE tiva (
-    DATAFLOW VARCHAR,
-    MEASURE VARCHAR,
-    TIME_PERIOD INTEGER,
-    VALUE_ADDED_SOURCE_AREA VARCHAR,
-    VALUE_ADDED_SOURCE_ACTIVITY VARCHAR,
-    FINAL_DEMAND_AREA VARCHAR,
-    FINAL_DEMAND_ACTIVITY VARCHAR,
-    OBS_VALUE DOUBLE,
-    UNIT_MEASURE VARCHAR,
-    UNIT_MULT INTEGER,
-    FREQ VARCHAR
-);
+1. `fetch` downloads the OECD TIVA *Final Demand Value Added by Activity* (FDVA) zstd-compressed CSV into `./data/FDVA.csv.zst`, and the DuckDB JDBC driver into `./jdbc/` (used by `ontop`). Each download is skipped if the file already exists.
+2. `load` reads that file straight into DuckDB (zstd is decompressed on the fly) and (re)builds the `tiva` table in `./run/tiva.duckdb`.
+3. `ontop` loads the R2RML mapping (`ontop/tiva.r2rml.ttl`), opens a read-only JDBC connection to DuckDB (`ontop/tiva.properties`), and serves SPARQL on port `8080` at `http://localhost:8080/sparql`.
 
-COPY tiva FROM '/data/FDVA_2022.csv' (HEADER TRUE);
-```
+On a later `docker compose up`, the downloads are skipped (the files are present) and the `tiva` table is rebuilt from the local file. The rebuild happens on every start because the `duckdb/duckdb` image ships no shell or other tooling to implement a "skip if already loaded" guard; reloading the ~64M-row file takes only a few seconds on a sufficiently modern machine.
 
-Or, let DuckDB infer the schema:
-
-```sql
-CREATE OR REPLACE TABLE tiva AS
-FROM read_csv('/data/FDVA_2022.csv');
-```
-
-The database is written to `./run/tiva.duckdb`.
-
-## 3. Start the endpoint
+## Query it
 
 ```bash
-docker compose up -d ontop
-```
-
-Ontop loads the R2RML mapping (`ontop/tiva.r2rml.ttl`), opens a read-only JDBC connection to DuckDB (`ontop/tiva.properties`), and serves SPARQL on port `8080` at `http://localhost:8080`.
-
-## 4. Query it
-
-```bash
-curl -s 'http://localhost:8080' \
+curl -s 'http://localhost:8080/sparql' \
      --data-urlencode 'query=PREFIX qb: <http://purl.org/linked-data/cube#>
                         SELECT (COUNT(*) AS ?n) WHERE { ?o a qb:Observation }' \
      -H 'Accept: application/json'
 ```
 
 Each data row is exposed as a `qb:Observation`. Filter on any of the dimensions below to pull real values, e.g. match on `ex:indicator`, `sdmx-dimension:refPeriod`, `ex:valueAddedSourceArea`, … and read the value from `sdmx-measure:obsValue`.
+
+## Manual / advanced
+
+The `fetch` service downloads:
+
+- FDVA dataset: https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/oecd/tiva/FDVA_2019-2022/1/FDVA_2019-2022-1-FDVA_2022.csv.zst
+- DuckDB JDBC driver: https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar
+
+Other dataset sources, if you prefer:
+
+- [Data Explorer – TIVA 2025 edition](https://data-explorer.oecd.org/vis?pg=0&bp=true&tm=%22%28TIVA%29%202025%20edition%22&snb=5&df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_TIVA_FDVA%40DF_FDVA&df[ag]=OECD.STI.PIE&df[vs]=1.1&dq=.._T.W._T..A&pd=2015,&to[TIME_PERIOD]=false)
+- [FDVA 2019–2022 (zip)](https://webfs-sti.oecd.org/files/STI-PIE/TIVA/2025/FDVA/FDVA_2019-2022.zip)
+
+To rebuild the `tiva` table by hand:
+
+```bash
+docker compose run --rm load
+```
+
+or run DuckDB directly (zstd is decompressed on the fly; the table is created with explicit types and then populated):
+
+```bash
+docker run --rm \
+  -v "$PWD/data:/data:ro" -v "$PWD/run:/workspace" \
+  --entrypoint duckdb duckdb/duckdb:1.5.6 \
+  tiva.duckdb \
+  -c "CREATE OR REPLACE TABLE tiva (DATAFLOW VARCHAR, MEASURE VARCHAR, TIME_PERIOD INTEGER, VALUE_ADDED_SOURCE_AREA VARCHAR, VALUE_ADDED_SOURCE_ACTIVITY VARCHAR, FINAL_DEMAND_AREA VARCHAR, FINAL_DEMAND_ACTIVITY VARCHAR, OBS_VALUE DOUBLE, UNIT_MEASURE VARCHAR, UNIT_MULT INTEGER, FREQ VARCHAR);" \
+  -c "INSERT INTO tiva SELECT * FROM read_csv('/data/FDVA.csv.zst', header=true);"
+```
 
 ## Modeled dimensions
 
@@ -111,9 +102,10 @@ Code lists (area, activity, indicator, frequency, unit, multiplier) are generate
 
 | File | Role |
 | --- | --- |
-| `docker-compose.yaml` | `duckdb` + `ontop` services |
+| `docker-compose.yaml` | `fetch` + `load` + `ontop` services |
 | `ontop/tiva.r2rml.ttl` | R2RML mapping: `tiva` → QB/SDMX cube |
 | `ontop/tiva.properties` | JDBC URL/driver, read-only flag, query logging |
+| `ontop/tiva-constraints.lst` | primary key columns for the `tiva` table |
 
 ## Notes
 
