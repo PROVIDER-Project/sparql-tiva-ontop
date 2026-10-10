@@ -2,13 +2,21 @@ services:
   fetch:
     image: curlimages/curl:8.10.1
     user: "0"
-    command: >
-      sh -c 'set -e;
-      zst=/data/FDVA.csv.zst;
-      jar=/jdbc/duckdb_jdbc-1.5.6.0.jar;
-      [ -s "$$zst" ] || curl -fL --retry 3 -o "$$zst" "https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/oecd/tiva/FDVA_2019-2022/1/FDVA_2019-2022-1-FDVA_2022.csv.zst";
-      [ -s "$$jar" ] || curl -fL --retry 3 -o "$$jar" "https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar";
-      echo "fetch: ready"'
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -eu
+        zst=/data/FDVA.csv.zst
+        jar=/jdbc/duckdb_jdbc-1.5.6.0.jar
+        if [ ! -s "$$zst" ]; then
+          curl -fL --retry 3 -o "$$zst.part" "https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/oecd/tiva/FDVA_2019-2022/1/FDVA_2019-2022-1-FDVA_2022.csv.zst"
+          mv "$$zst.part" "$$zst"
+        fi
+        if [ ! -s "$$jar" ]; then
+          curl -fL --retry 3 -o "$$jar.part" "https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar"
+          mv "$$jar.part" "$$jar"
+        fi
+        echo "fetch: ready"
     volumes:
       - ./data:/data
       - ./jdbc:/jdbc

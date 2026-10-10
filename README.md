@@ -35,7 +35,7 @@ docker compose up -d
 
 This runs three services in order:
 
-1. `fetch` downloads the OECD TIVA *Final Demand Value Added by Activity* (FDVA) zstd-compressed CSV into `./data/FDVA.csv.zst`, and the DuckDB JDBC driver into `./jdbc/` (used by `ontop`). Each download is skipped if the file already exists.
+1. `fetch` downloads the OECD TIVA *Final Demand Value Added by Activity* (FDVA) zstd-compressed CSV into `./data/FDVA.csv.zst`, and the DuckDB JDBC driver into `./jdbc/` (used by `ontop`). Each download is skipped if a nonempty completed file already exists. New downloads are written to `.part` files and renamed only after curl succeeds; a failed download stops `fetch` and prevents `load` from starting. A later attempt overwrites the partial file.
 2. `load` reads that file straight into DuckDB (zstd is decompressed on the fly) and (re)builds the `tiva` table in `./run/tiva.duckdb`.
 3. `ontop` loads the R2RML mapping (`ontop/tiva.r2rml.ttl`), opens a read-only JDBC connection to DuckDB (`ontop/tiva.properties`), and serves SPARQL on port `8080` at `http://localhost:8080/sparql`.
 
