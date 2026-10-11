@@ -1,4 +1,6 @@
 # R2RML mapping for the annual TiVA table in DuckDB.
+# Observations use an indexed local name within a fixed-prefix IRI template.
+# Code lists use small, unique tables built by load.sql.
 # All column-based literals have explicit RDF datatypes.
 # Static cube metadata is mapped from SELECT 1, so it is queryable too.
 @prefix rr: <http://www.w3.org/ns/r2rml#> .
@@ -26,8 +28,8 @@
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 
 <https://example.org/tiva/mapping/tiva-observations-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DATAFLOW, MEASURE, CAST(TIME_PERIOD AS VARCHAR) AS YEAR, VALUE_ADDED_SOURCE_AREA, VALUE_ADDED_SOURCE_ACTIVITY, FINAL_DEMAND_AREA, FINAL_DEMAND_ACTIVITY, OBS_VALUE, UNIT_MEASURE, UNIT_MULT, FREQ FROM tiva WHERE OBS_VALUE IS NOT NULL" ] ;
-    rr:subjectMap [ rr:template "https://example.org/tiva/observation/{DATAFLOW}/{MEASURE}/{FREQ}/{YEAR}/{VALUE_ADDED_SOURCE_AREA}/{VALUE_ADDED_SOURCE_ACTIVITY}/{FINAL_DEMAND_AREA}/{FINAL_DEMAND_ACTIVITY}" ; rr:termType rr:IRI ] ;
+    rr:logicalTable [ rr:tableName "tiva_observations" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/observation/{OBSERVATION_LOCAL_NAME}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [
         rr:predicate rdf:type ;
         rr:objectMap [ rr:constant qb:Observation ]
@@ -66,7 +68,7 @@
     ] ;
     rr:predicateObjectMap [
         rr:predicate sdmx-measure:obsValue ;
-        rr:objectMap [ rr:column "OBS_VALUE" ; rr:termType rr:Literal ; rr:datatype xsd:double ]
+        rr:objectMap [ rr:column "OBS_VALUE_LEXICAL" ; rr:termType rr:Literal ; rr:datatype xsd:double ]
     ] ;
     rr:predicateObjectMap [
         rr:predicate sdmx-attribute:unitMeasure ;
@@ -74,11 +76,11 @@
     ] ;
     rr:predicateObjectMap [
         rr:predicate sdmx-attribute:unitMult ;
-        rr:objectMap [ rr:template "https://example.org/tiva/unit-multiplier/{UNIT_MULT}" ; rr:termType rr:IRI ]
+        rr:objectMap [ rr:template "https://example.org/tiva/unit-multiplier/{UNIT_MULT_CODE}" ; rr:termType rr:IRI ]
     ] .
 
 <https://example.org/tiva/mapping/tiva-datasets-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT DATAFLOW FROM tiva" ] ;
+    rr:logicalTable [ rr:tableName "tiva_dataset" ] ;
     rr:subjectMap [ rr:template "https://example.org/tiva/dataset/{DATAFLOW}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [
         rr:predicate rdf:type ;
@@ -93,8 +95,8 @@
         rr:objectMap [ rr:constant <https://example.org/tiva/structure/fdva> ]
     ] .
 
-<https://example.org/tiva/mapping/source-areas-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT VALUE_ADDED_SOURCE_AREA AS CODE FROM tiva" ] ;
+<https://example.org/tiva/mapping/areas-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:tableName "tiva_area" ] ;
     rr:subjectMap [ rr:template "https://example.org/tiva/area/{CODE}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [
         rr:predicate rdf:type ;
@@ -109,40 +111,8 @@
         rr:objectMap [ rr:constant <https://example.org/tiva/scheme/area> ]
     ] .
 
-<https://example.org/tiva/mapping/demand-areas-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT FINAL_DEMAND_AREA AS CODE FROM tiva" ] ;
-    rr:subjectMap [ rr:template "https://example.org/tiva/area/{CODE}" ; rr:termType rr:IRI ] ;
-    rr:predicateObjectMap [
-        rr:predicate rdf:type ;
-        rr:objectMap [ rr:constant skos:Concept ]
-    ] ;
-    rr:predicateObjectMap [
-        rr:predicate skos:notation ;
-        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
-    ] ;
-    rr:predicateObjectMap [
-        rr:predicate skos:inScheme ;
-        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/area> ]
-    ] .
-
-<https://example.org/tiva/mapping/source-activities-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT VALUE_ADDED_SOURCE_ACTIVITY AS CODE FROM tiva" ] ;
-    rr:subjectMap [ rr:template "https://example.org/tiva/activity/{CODE}" ; rr:termType rr:IRI ] ;
-    rr:predicateObjectMap [
-        rr:predicate rdf:type ;
-        rr:objectMap [ rr:constant skos:Concept ]
-    ] ;
-    rr:predicateObjectMap [
-        rr:predicate skos:notation ;
-        rr:objectMap [ rr:column "CODE" ; rr:termType rr:Literal ; rr:datatype xsd:string ]
-    ] ;
-    rr:predicateObjectMap [
-        rr:predicate skos:inScheme ;
-        rr:objectMap [ rr:constant <https://example.org/tiva/scheme/activity> ]
-    ] .
-
-<https://example.org/tiva/mapping/demand-activities-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT FINAL_DEMAND_ACTIVITY AS CODE FROM tiva" ] ;
+<https://example.org/tiva/mapping/activities-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:tableName "tiva_activity" ] ;
     rr:subjectMap [ rr:template "https://example.org/tiva/activity/{CODE}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [
         rr:predicate rdf:type ;
@@ -158,7 +128,7 @@
     ] .
 
 <https://example.org/tiva/mapping/indicators-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT MEASURE AS CODE FROM tiva" ] ;
+    rr:logicalTable [ rr:tableName "tiva_indicator" ] ;
     rr:subjectMap [ rr:template "https://example.org/tiva/indicator/{CODE}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [
         rr:predicate rdf:type ;
@@ -174,7 +144,7 @@
     ] .
 
 <https://example.org/tiva/mapping/frequencies-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT FREQ AS CODE FROM tiva" ] ;
+    rr:logicalTable [ rr:tableName "tiva_frequency" ] ;
     rr:subjectMap [ rr:template "https://example.org/tiva/frequency/{CODE}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [
         rr:predicate rdf:type ;
@@ -190,7 +160,7 @@
     ] .
 
 <https://example.org/tiva/mapping/units-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT UNIT_MEASURE AS CODE FROM tiva" ] ;
+    rr:logicalTable [ rr:tableName "tiva_unit" ] ;
     rr:subjectMap [ rr:template "https://example.org/tiva/unit/{CODE}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [
         rr:predicate rdf:type ;
@@ -206,7 +176,7 @@
     ] .
 
 <https://example.org/tiva/mapping/unit-multipliers-1> a rr:TriplesMap ;
-    rr:logicalTable [ rr:sqlQuery "SELECT DISTINCT UNIT_MULT FROM tiva" ] ;
+    rr:logicalTable [ rr:tableName "tiva_unit_multiplier" ] ;
     rr:subjectMap [ rr:template "https://example.org/tiva/unit-multiplier/{UNIT_MULT}" ; rr:termType rr:IRI ] ;
     rr:predicateObjectMap [
         rr:predicate rdf:type ;

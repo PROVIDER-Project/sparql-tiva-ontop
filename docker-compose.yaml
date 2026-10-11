@@ -30,13 +30,13 @@ services:
     entrypoint: ["duckdb"]
     command:
       - tiva.duckdb
-      - -c
-      - "CREATE OR REPLACE TABLE tiva (DATAFLOW VARCHAR, MEASURE VARCHAR, TIME_PERIOD INTEGER, VALUE_ADDED_SOURCE_AREA VARCHAR, VALUE_ADDED_SOURCE_ACTIVITY VARCHAR, FINAL_DEMAND_AREA VARCHAR, FINAL_DEMAND_ACTIVITY VARCHAR, OBS_VALUE DOUBLE, UNIT_MEASURE VARCHAR, UNIT_MULT INTEGER, FREQ VARCHAR);"
-      - -c
-      - "INSERT INTO tiva SELECT * FROM read_csv('/data/FDVA.csv.zst', header=true);"
+      - -bail
+      - -f
+      - /opt/ontop/input/load.sql
     volumes:
       - ./data:/data:ro
       - ./run:/workspace
+      - ./ontop:/opt/ontop/input:ro
 
   ontop:
     image: ontop/ontop:5.5.0
@@ -51,6 +51,7 @@ services:
       ONTOP_MAPPING_FILE: /opt/ontop/input/tiva.r2rml.ttl
       ONTOP_PROPERTIES_FILE: /opt/ontop/input/tiva.properties
       ONTOP_CONSTRAINT_FILE: /opt/ontop/input/tiva-constraints.lst
+      ONTOP_LENSES_FILE: /opt/ontop/input/tiva-lenses.json
     volumes:
       - ./ontop:/opt/ontop/input:ro
       - ./jdbc:/opt/ontop/jdbc:ro
