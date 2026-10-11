@@ -22,16 +22,14 @@ services:
       - ./jdbc:/jdbc
 
   load:
-    image: duckdb/duckdb:1.5.6
+    build:
+      context: ./loader
     depends_on:
       fetch:
         condition: service_completed_successfully
     working_dir: /workspace
-    entrypoint: ["duckdb"]
     command:
       - tiva.duckdb
-      - -bail
-      - -f
       - /opt/ontop/input/load.sql
     volumes:
       - ./data:/data:ro

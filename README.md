@@ -61,7 +61,7 @@ query-planning section below for identifier changes, rebuild steps, and tools.
 
 - Docker + Docker Compose (v2, for `depends_on` with `condition`)
 
-The first start downloads the dataset (~421MB, zstd-compressed) into `./data/` and builds the database into `./run/` (about 400MB), so allow a few hundred MB of free space.
+The first start downloads the dataset (~421MB, zstd-compressed) into `./data/`, builds the custom loader image, and prepares the database in `./run/`. Derived columns and indexes increase its size, so allow space for the indexed database as well as the source file.
 
 ## Start the endpoint
 
@@ -72,10 +72,21 @@ docker compose up -d
 This runs three services in order:
 
 1. `fetch` downloads the OECD TIVA *Final Demand Value Added by Activity* (FDVA) zstd-compressed CSV into `./data/FDVA.csv.zst`, and the DuckDB JDBC driver into `./jdbc/` (used by `ontop`). Each download is skipped if a nonempty completed file already exists. New downloads are written to `.part` files and renamed only after curl succeeds; a failed download stops `fetch` and prevents `load` from starting. A later attempt overwrites the partial file.
-2. `load` executes `ontop/load.sql`, reads that file straight into DuckDB (zstd is decompressed on the fly), and rebuilds `tiva` plus seven small dataset/code-list tables in one transaction in `./run/tiva.duckdb`. The code-list tables have primary keys; area and activity codes combine source and demand values once during loading. The loader also derives the observation local name and lexical columns, builds lookup indexes after ingestion, and runs `ANALYZE`.
+2. `load` checks `./run/tiva.duckdb.complete` and a nonempty `./run/tiva.duckdb`. If both exist, it exits successfully without opening DuckDB. Otherwise it executes `ontop/load.sql`, reads the source file straight into DuckDB (zstd is decompressed on the fly), and rebuilds `tiva` plus seven small dataset/code-list tables in one transaction in `./run/tiva.duckdb`. The code-list tables have primary keys; area and activity codes combine source and demand values once during loading. The loader also derives the observation local name and lexical columns, builds lookup indexes after ingestion, and runs `ANALYZE`. It creates the completion marker only after DuckDB successfully commits and exits.
 3. `ontop` loads the R2RML mapping (`ontop/tiva.r2rml.ttl`), observation lens (`ontop/tiva-lenses.json`), and constraints, opens a read-only JDBC connection to DuckDB (`ontop/tiva.properties`), and serves SPARQL on port `8080` at `http://localhost:8080/sparql`.
 
-On a later `docker compose up`, the downloads are skipped (the files are present) and the `tiva` table is rebuilt from the local file. The rebuild happens on every start because the `duckdb/duckdb` image ships no shell or other tooling to implement a "skip if already loaded" guard; the rebuild also computes the small code lists, so its duration depends on the machine and dataset size.
+Both the database and its completion marker live in the bind-mounted `./run/`
+directory and survive `docker compose down` / `up`. Subsequent starts skip loading
+and let Ontop serve the prepared database read-only. A failed load leaves no
+marker and fails the `load` service, so Ontop does not start. A marker with a
+missing or empty database triggers loading again.
+
+The loader image is built from `loader/Dockerfile`: the pinned official DuckDB
+1.5.6 binary is copied into Debian with a shell and its C++ runtime. Its build
+context is only `./loader`, excluding the large data and database directories.
+`loader/load-duckdb.sh` implements the marker lifecycle. The marker is a manual
+completion flag: source, SQL, and mapping changes do not automatically invalidate
+it. Delete it explicitly when a rebuild is needed.
 
 ## Query it
 
@@ -100,22 +111,20 @@ Other dataset sources, if you prefer:
 - [Data Explorer – TIVA 2025 edition](https://data-explorer.oecd.org/vis?pg=0&bp=true&tm=%22%28TIVA%29%202025%20edition%22&snb=5&df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_TIVA_FDVA%40DF_FDVA&df[ag]=OECD.STI.PIE&df[vs]=1.1&dq=.._T.W._T..A&pd=2015,&to[TIME_PERIOD]=false)
 - [FDVA 2019–2022 (zip)](https://webfs-sti.oecd.org/files/STI-PIE/TIVA/2025/FDVA/FDVA_2019-2022.zip)
 
-To rebuild the `tiva` table by hand:
+To force a rebuild, stop Ontop, delete only the completion marker, and run the
+loader. The existing database need not be deleted; the SQL rebuild is
+transactional. Start Ontop again only if loading succeeds:
 
 ```bash
-docker compose run --rm load
+docker compose stop ontop
+rm -f ./run/tiva.duckdb.complete
+docker compose run --rm --build load && docker compose up -d --no-deps ontop
 ```
 
-or run DuckDB directly (zstd is decompressed on the fly; the table is created with explicit types and then populated):
-
-```bash
-docker run --rm \
-  -v "$PWD/data:/data:ro" -v "$PWD/run:/workspace" \
-  -v "$PWD/ontop:/opt/ontop/input:ro" \
-  -w /workspace \
-  --entrypoint duckdb duckdb/duckdb:1.5.6 \
-  tiva.duckdb -bail -f /opt/ontop/input/load.sql
-```
+Running `docker compose run --rm load` with the marker present intentionally
+skips loading. Marker deletion also schedules a rebuild on the next ordinary
+`docker compose up`. If an already prepared database has no marker when adopting
+this change, the loader rebuilds it once.
 
 ## Modeled dimensions
 
@@ -144,6 +153,9 @@ Code lists (area, activity, indicator, frequency, unit, multiplier) are generate
 | `ontop/tiva-constraints.lst` | unique columns for `tiva` and the dataset/code-list tables |
 | `ontop/tiva-lenses.json` | observation filter and explicit composite/local-name keys |
 | `ontop/load.sql` | transactional rebuild of facts, derived lookup columns, code lists, and indexes |
+| `loader/Dockerfile` | DuckDB 1.5.6 CLI with a shell and C++ runtime |
+| `loader/load-duckdb.sh` | skip completed databases and mark successful loads |
+| `tests/test_loader.py` | marker lifecycle tests without Docker or the dataset |
 
 ## Notes
 
@@ -225,8 +237,8 @@ rebuilding the database, then recreate it with the updated configuration:
 
 ```bash
 docker compose stop ontop
-docker compose run --rm load
-docker compose up -d --no-deps --force-recreate ontop
+rm -f ./run/tiva.duckdb.complete
+docker compose run --rm --build load && docker compose up -d --no-deps --force-recreate ontop
 ```
 
 ### Inspecting the SQL without executing the large query
@@ -268,3 +280,15 @@ results. Restore `STRICT` for normal use. `LOOSE` does not remove explicit
 References: [Ontop lenses](https://ontop-vkg.org/guide/advanced/lenses),
 [Ontop 5.5.0 configuration keys](https://raw.githubusercontent.com/ontop/ontop/ontop-5.5.0/core/model/src/main/resources/property_description.json),
 [Ontop CLI](https://ontop-vkg.org/guide/cli.html).
+
+## Loader lifecycle tests
+
+Run from the repository with Python 3:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+These tests check successful completion and skipping, explicit reload after
+marker deletion, retry after a failed load, stale markers, and failure to create
+a nonempty database. They use a fake DuckDB executable and do not load the dataset.
