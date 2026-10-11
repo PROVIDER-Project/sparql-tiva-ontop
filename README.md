@@ -61,7 +61,7 @@ query-planning section below for identifier changes, rebuild steps, and tools.
 
 - Docker + Docker Compose (v2, for `depends_on` with `condition`)
 
-The first start downloads the dataset (~421MB, zstd-compressed) into `./data/`, builds the custom loader image, and prepares the database in `./run/`. Derived columns and indexes increase its size, so allow space for the indexed database as well as the source file.
+The first start downloads the dataset (~421MB, zstd-compressed) into `./data/`, pulls the published `aksw/duckdb-shell:1.5.6` image, and prepares the database in `./run/`. Derived columns and indexes increase its size, so allow space for the indexed database as well as the source file.
 
 ## Start the endpoint
 
@@ -81,12 +81,55 @@ and let Ontop serve the prepared database read-only. A failed load leaves no
 marker and fails the `load` service, so Ontop does not start. A marker with a
 missing or empty database triggers loading again.
 
-The loader image is built from `loader/Dockerfile`: the pinned official DuckDB
-1.5.6 binary is copied into Debian with a shell and its C++ runtime. Its build
-context is only `./loader`, excluding the large data and database directories.
+The generic `aksw/duckdb-shell:1.5.6` image is built from
+`docker/duckdb-shell/Dockerfile`: the pinned official DuckDB binary is copied
+into Debian with `/bin/sh`, its C++ runtime, and CA certificates. Its default
+entrypoint is `duckdb`; override it with `--entrypoint /bin/sh` for shell scripts.
+The image contains no TIVA data or loading logic. Compose mounts
+`loader/load-duckdb.sh` and overrides the entrypoint to run it. Compose uses the
+published image directly, with no local build. For image development, the build context is only `./docker/duckdb-shell`, excluding data
+and database directories.
 `loader/load-duckdb.sh` implements the marker lifecycle. The marker is a manual
 completion flag: source, SQL, and mapping changes do not automatically invalidate
 it. Delete it explicitly when a rebuild is needed.
+
+## Publishing the generic image
+
+The GitHub Actions workflow `.github/workflows/duckdb-shell.yml` builds and
+smoke-tests the image on pull requests. On `main` pushes affecting the image or
+workflow, and manual runs from `main`, it publishes Linux amd64 and arm64 images
+as `aksw/duckdb-shell:1.5.6`, `:latest`, and `:sha-<full commit>`.
+Set the repository Actions variable `DOCKERHUB_USERNAME` to a Docker Hub account
+with push access to `aksw/duckdb-shell`, and the Actions secret `DOCKERHUB_TOKEN`
+to that account's access token. No credentials belong in this repository.
+Publication requires committing and pushing the workflow and configuring those
+credentials. Keep the Dockerfile version, workflow tags, Compose image, and JDBC
+version aligned when upgrading. Version tags are updated on publication; use a
+commit tag or image digest when deployment must be immutable.
+
+For a manual publication after `docker login`:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t aksw/duckdb-shell:1.5.6 -t aksw/duckdb-shell:latest \
+  --push ./docker/duckdb-shell
+```
+
+Compose uses the prebuilt image by default. To explicitly refresh the local image:
+
+```bash
+docker compose pull load
+docker compose up -d
+```
+
+For Flux/Kubernetes, use `image: aksw/duckdb-shell:1.5.6` (preferably pinned by
+digest) in an init container or load Job. Mount the loading script and SQL through
+a ConfigMap, source data and database through volumes, and set
+`command: ["/bin/sh", "/opt/loader/load-duckdb.sh"]` with the database and SQL
+paths as `args`. Ontop must start after loading finishes and mount the same
+persistent database read-only. Kubernetes pulls the published image; it does
+not build the Dockerfile. The completion marker must live beside the database
+on its persistent volume so pod recreation skips completed loading.
 
 ## Query it
 
@@ -118,7 +161,7 @@ transactional. Start Ontop again only if loading succeeds:
 ```bash
 docker compose stop ontop
 rm -f ./run/tiva.duckdb.complete
-docker compose run --rm --build load && docker compose up -d --no-deps ontop
+docker compose run --rm load && docker compose up -d --no-deps ontop
 ```
 
 Running `docker compose run --rm load` with the marker present intentionally
@@ -153,7 +196,9 @@ Code lists (area, activity, indicator, frequency, unit, multiplier) are generate
 | `ontop/tiva-constraints.lst` | unique columns for `tiva` and the dataset/code-list tables |
 | `ontop/tiva-lenses.json` | observation filter and explicit composite/local-name keys |
 | `ontop/load.sql` | transactional rebuild of facts, derived lookup columns, code lists, and indexes |
-| `loader/Dockerfile` | DuckDB 1.5.6 CLI with a shell and C++ runtime |
+| `docker/duckdb-shell/Dockerfile` | generic DuckDB CLI with a shell and runtime |
+| `.github/workflows/duckdb-shell.yml` | test and publish `aksw/duckdb-shell` to Docker Hub |
+| `tests/test_duckdb_shell.sh` | real image and loader smoke test |
 | `loader/load-duckdb.sh` | skip completed databases and mark successful loads |
 | `tests/test_loader.py` | marker lifecycle tests without Docker or the dataset |
 
@@ -238,7 +283,7 @@ rebuilding the database, then recreate it with the updated configuration:
 ```bash
 docker compose stop ontop
 rm -f ./run/tiva.duckdb.complete
-docker compose run --rm --build load && docker compose up -d --no-deps --force-recreate ontop
+docker compose run --rm load && docker compose up -d --no-deps --force-recreate ontop
 ```
 
 ### Inspecting the SQL without executing the large query
