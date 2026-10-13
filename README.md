@@ -55,7 +55,7 @@ query-planning section below for identifier changes, rebuild steps, and tools.
 ## Open TODOS
 
 * Vocabulary still uses example namespace. Needs consolidation.
-* Tiva Areas are NOT countries; therefore a mapping tiva-area -> country iso3 code is needed - e.g. via overlapsWith.
+* Verify area memberships against the 2025 edition. The loaded CSV currently uses the accessible 2023 guide; its old-code companion is not loaded.
 
 ## Requirements
 
@@ -72,7 +72,7 @@ docker compose up -d
 This runs three services in order:
 
 1. `fetch` downloads the OECD TIVA *Final Demand Value Added by Activity* (FDVA) zstd-compressed CSV into `./data/FDVA.csv.zst`, and the DuckDB JDBC driver into `./jdbc/` (used by `ontop`). Each download is skipped if a nonempty completed file already exists. New downloads are written to `.part` files and renamed only after curl succeeds; a failed download stops `fetch` and prevents `load` from starting. A later attempt overwrites the partial file.
-2. `load` checks `./run/tiva.duckdb.complete` and a nonempty `./run/tiva.duckdb`. If both exist, it exits successfully without opening DuckDB. Otherwise it executes `ontop/load.sql`, reads the source file straight into DuckDB (zstd is decompressed on the fly), and rebuilds `tiva` plus seven small dataset/code-list tables in one transaction in `./run/tiva.duckdb`. The code-list tables have primary keys; area and activity codes combine source and demand values once during loading. The loader also derives the observation local name and lexical columns, builds lookup indexes after ingestion, and runs `ANALYZE`. It creates the completion marker only after DuckDB successfully commits and exits.
+2. `load` checks `./run/tiva.duckdb.complete` and a nonempty `./run/tiva.duckdb`. If both exist, it exits successfully without opening DuckDB. Otherwise it executes `ontop/load.sql`, reads the source file straight into DuckDB (zstd is decompressed on the fly), and rebuilds `tiva` plus nine small dataset/code-list/membership tables in one transaction in `./run/tiva.duckdb`. The code-list tables have primary keys; area and activity codes combine source and demand values once during loading. The loader also derives the observation local name and lexical columns, builds lookup indexes after ingestion, and runs `ANALYZE`. It creates the completion marker only after DuckDB successfully commits and exits.
 3. `ontop` loads the R2RML mapping (`ontop/tiva.r2rml.ttl`), observation lens (`ontop/tiva-lenses.json`), and constraints, opens a read-only JDBC connection to DuckDB (`ontop/tiva.properties`), and serves SPARQL on port `8080` at `http://localhost:8080/sparql`.
 
 Both the database and its completion marker live in the bind-mounted `./run/`
@@ -185,6 +185,50 @@ this change, the loader rebuilds it once.
 | multiplier | `sdmx-attribute:unitMult` | `UNIT_MULT` |
 
 Code lists (area, activity, indicator, frequency, unit, multiplier) are generated as `skos:ConceptScheme`s from the small unique tables built during loading, and the cube is described as a `qb:DataStructureDefinition`. Source and demand areas share one area mapping; source and demand activities share one activity mapping.
+
+### Area memberships
+
+The original `ontop/load.sql` also loads `ontop/tiva-area-mapping.csv` into
+`tiva_area_membership`, keyed by `(AREA_CODE, MEMBER_CODE)`. The existing Compose
+mount makes the CSV available at `/opt/ontop/input/tiva-area-mapping.csv`.
+Its metadata file records the source and extraction rules: the OECD TiVA 2023
+Indicators Guide, Tables A.1 and A.2, printed pages 43 and 44. These are 2023
+memberships using current codes, not verified 2025 membership definitions.
+The missing 2025 economy additions particularly affect Africa, Other regions,
+Non-OECD and residual coverage. The old-2021 code-alias CSV is not loaded.
+
+The loader resolves nested memberships to economy leaves in `tiva_area_country`,
+keyed by `(AREA_CODE, COUNTRY_CODE)`. R2RML exposes these pairs using
+`ex:hasCountry`, with shared country IRIs `https://example.org/country/{ISO3}`.
+It emits no labels, types or descriptive triples for country resources; a
+separate authoritative dataset supplies those descriptions. A single-column
+country-code index supports reverse lookups. For example:
+
+```sparql
+PREFIX ex: <https://example.org/tiva/vocab/>
+SELECT ?area WHERE {
+  ?area ex:hasCountry <https://example.org/country/CAN> .
+}
+```
+
+The result includes Canada's own `.../tiva/area/CAN` resource and groups such as
+NAFTA, OECD, APEC and G20. Country-level areas have identity links. Nested
+G20/EU27_2020 membership is flattened and deduplicated, so France's multiple
+paths create only one G20 country link. Mapping endpoints are included in the
+area code list even when absent from a fact subset.
+
+The 2023 group definitions remain unchanged. AGO, COD, STP and ARE are recognized
+as separately represented 2025 economy codes for identity links only; they do
+not silently update the older group definitions. WXD is residual and has no
+country link. Domestic (`D`) needs observation context. World (`W`) has no
+explicit country enumeration in this CSV, so it also produces no fixed links.
+Consequently these links are not a complete area-to-country map for the 2025
+edition, and they do not allocate aggregate values to countries.
+
+CSV or SQL changes require the normal explicit rebuild: stop Ontop, remove
+`run/tiva.duckdb.complete`, rerun the loader, and restart Ontop after success.
+The completion marker does not automatically track CSV changes. A missing CSV,
+duplicate pair or invalid populated membership fails the transactional rebuild.
 
 ## Files
 
@@ -337,3 +381,7 @@ python3 -m unittest discover -s tests -v
 These tests check successful completion and skipping, explicit reload after
 marker deletion, retry after a failed load, stale markers, and failure to create
 a nonempty database. They use a fake DuckDB executable and do not load the dataset.
+
+The area-membership fixture test uses Java 11+ and the downloaded JDBC jar.
+It skips when either is missing. It checks actual SQL membership loading,
+repeated rebuilds, missing/invalid CSV rollback and unchanged fact indexes.

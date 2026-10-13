@@ -111,6 +111,16 @@
         rr:objectMap [ rr:constant <https://example.org/tiva/scheme/area> ]
     ] .
 
+# Flattened area-to-country links. Country descriptions belong to a separate
+# authoritative dataset; this map emits only the hasCountry relation.
+<https://example.org/tiva/mapping/area-countries-1> a rr:TriplesMap ;
+    rr:logicalTable [ rr:tableName "tiva_area_country" ] ;
+    rr:subjectMap [ rr:template "https://example.org/tiva/area/{AREA_CODE}" ; rr:termType rr:IRI ] ;
+    rr:predicateObjectMap [
+        rr:predicate ex:hasCountry ;
+        rr:objectMap [ rr:template "https://example.org/country/{COUNTRY_CODE}" ; rr:termType rr:IRI ]
+    ] .
+
 <https://example.org/tiva/mapping/activities-1> a rr:TriplesMap ;
     rr:logicalTable [ rr:tableName "tiva_activity" ] ;
     rr:subjectMap [ rr:template "https://example.org/tiva/activity/{CODE}" ; rr:termType rr:IRI ] ;
@@ -634,4 +644,3 @@
         rr:predicate rdf:type ;
         rr:objectMap [ rr:constant skos:ConceptScheme ]
     ] .
-

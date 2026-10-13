@@ -47,11 +47,59 @@ CREATE OR REPLACE TABLE tiva_dataset (DATAFLOW VARCHAR PRIMARY KEY);
 INSERT INTO tiva_dataset
 SELECT DISTINCT DATAFLOW FROM tiva WHERE DATAFLOW IS NOT NULL;
 
+-- The CSV uses current area codes and the documented 2023 memberships.
+-- World and Domestic have no fixed member list and therefore no edges.
+-- Keep residual and nested aggregate members as areas, not country identities.
+CREATE OR REPLACE TABLE tiva_area_membership (
+    AREA_CODE VARCHAR,
+    MEMBER_CODE VARCHAR,
+    MEMBER_KIND VARCHAR NOT NULL CHECK (MEMBER_KIND IN ('economy', 'residual', 'aggregate')),
+    PRIMARY KEY (AREA_CODE, MEMBER_CODE)
+);
+INSERT INTO tiva_area_membership
+SELECT area_code, member_code, member_kind
+FROM read_csv('/opt/ontop/input/tiva-area-mapping.csv', header=true,
+              columns={'area_code': 'VARCHAR', 'member_code': 'VARCHAR', 'member_kind': 'VARCHAR'})
+WHERE member_code IS NOT NULL;
+
 CREATE OR REPLACE TABLE tiva_area (CODE VARCHAR PRIMARY KEY);
 INSERT INTO tiva_area
 SELECT VALUE_ADDED_SOURCE_AREA FROM tiva WHERE VALUE_ADDED_SOURCE_AREA IS NOT NULL
 UNION
-SELECT FINAL_DEMAND_AREA FROM tiva WHERE FINAL_DEMAND_AREA IS NOT NULL;
+SELECT FINAL_DEMAND_AREA FROM tiva WHERE FINAL_DEMAND_AREA IS NOT NULL
+UNION
+SELECT AREA_CODE FROM tiva_area_membership
+UNION
+SELECT MEMBER_CODE FROM tiva_area_membership;
+
+-- Resolve nested memberships to ISO3-coded economy leaves. No ISO3 codes
+-- are invented for the residual WXD, World or contextual Domestic entries.
+CREATE OR REPLACE TABLE tiva_area_country (
+    AREA_CODE VARCHAR,
+    COUNTRY_CODE VARCHAR,
+    PRIMARY KEY (AREA_CODE, COUNTRY_CODE)
+);
+INSERT INTO tiva_area_country
+WITH RECURSIVE
+country_codes(CODE) AS (
+    SELECT MEMBER_CODE FROM tiva_area_membership WHERE MEMBER_KIND = 'economy'
+    UNION
+    -- These separately represented economies were added in the 2025 edition.
+    -- This supplements country-area identity links only, not 2023 group lists.
+    SELECT CODE FROM (VALUES ('AGO'), ('COD'), ('STP'), ('ARE')) AS added(CODE)
+),
+reach(AREA_CODE, MEMBER_CODE) AS (
+    SELECT AREA_CODE, MEMBER_CODE FROM tiva_area_membership
+    UNION
+    SELECT r.AREA_CODE, m.MEMBER_CODE
+    FROM reach r JOIN tiva_area_membership m ON r.MEMBER_CODE = m.AREA_CODE
+)
+SELECT r.AREA_CODE, r.MEMBER_CODE
+FROM reach r JOIN country_codes c ON r.MEMBER_CODE = c.CODE
+UNION
+SELECT a.CODE, a.CODE
+FROM tiva_area a JOIN country_codes c ON a.CODE = c.CODE;
+CREATE INDEX tiva_area_country_country_code_idx ON tiva_area_country (COUNTRY_CODE);
 
 CREATE OR REPLACE TABLE tiva_activity (CODE VARCHAR PRIMARY KEY);
 INSERT INTO tiva_activity

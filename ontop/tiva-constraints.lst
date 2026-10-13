@@ -1,8 +1,10 @@
 tiva:DATAFLOW,MEASURE,FREQ,TIME_PERIOD,VALUE_ADDED_SOURCE_AREA,VALUE_ADDED_SOURCE_ACTIVITY,FINAL_DEMAND_AREA,FINAL_DEMAND_ACTIVITY
 tiva_dataset:DATAFLOW
 tiva_area:CODE
+tiva_area_membership:AREA_CODE,MEMBER_CODE
 tiva_activity:CODE
 tiva_indicator:CODE
 tiva_frequency:CODE
 tiva_unit:CODE
 tiva_unit_multiplier:UNIT_MULT
+tiva_area_country:AREA_CODE,COUNTRY_CODE
