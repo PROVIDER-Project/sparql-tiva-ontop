@@ -1,5 +1,7 @@
-# runtime artifacts, created by `docker compose up`
-data/
-run/
-jdbc/
-__pycache__
+# Generated artifacts and caches
+target/
+__pycache__/
+/endpoint/.cache/
+/endpoint/.env
+/trash/
+/.env

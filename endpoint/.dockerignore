@@ -1,0 +1,16 @@
+# Only resolved artifacts, endpoint configuration and attribution enter the build context.
+**
+!Dockerfile
+!README.md
+!ontop/
+!ontop/tiva.r2rml.ttl
+!ontop/tiva.properties
+!ontop/tiva-constraints.lst
+!ontop/tiva-lenses.json
+!ontop/tiva-area-mapping.csv.meta.md
+!target/
+!target/artifacts/
+!target/artifacts/tiva.duckdb.zst
+!target/artifacts/tiva.duckdb.zst.sha1
+!target/artifacts/duckdb_jdbc.jar
+!target/artifacts/duckdb_jdbc.jar.sha1

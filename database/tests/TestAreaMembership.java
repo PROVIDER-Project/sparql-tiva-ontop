@@ -21,14 +21,14 @@ class TestAreaMembership {
             +"('FDVA','M',2022,'STP','X','ARE','Y',2.0,'USD',6,'A')");
     }
     static String sql(Path root, Path csv) throws Exception {
-        return Files.readString(root.resolve("ontop/load.sql"))
+        return Files.readString(root.resolve("load.sql"))
             .replace("FROM read_csv('/data/FDVA.csv.zst', header=true)","FROM input_fixture")
             .replace("/opt/ontop/input/tiva-area-mapping.csv",csv.toString().replace("'","''"));
     }
     public static void main(String[] args) throws Exception {
         Class.forName("org.duckdb.DuckDBDriver");
         Path root=Path.of(args[0]).toAbsolutePath();
-        Path csv=root.resolve("ontop/tiva-area-mapping.csv");
+        Path csv=root.resolve("tiva-area-mapping.csv");
         String script=sql(root,csv);
         for (boolean empty:new boolean[]{false,true}) {
             try (var c=DriverManager.getConnection("jdbc:duckdb:"); var s=c.createStatement()) {

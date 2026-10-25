@@ -1,0 +1,15 @@
+name: sparql-tiva-ontop
+services:
+  ontop:
+    image: ${TIVA_IMAGE:-ghcr.io/provider-project/sparql-tiva-ontop:0.0.1}
+    build:
+      context: .
+      args:
+        ENDPOINT_VERSION: ${ENDPOINT_VERSION:-0.0.1}
+        TIVA_VERSION: ${TIVA_VERSION:-0.0.1}
+        DUCKDB_JDBC_VERSION: ${DUCKDB_JDBC_VERSION:-1.5.6.0}
+    restart: unless-stopped
+    ports:
+      - "${ONTOP_PORT:-8080}:8080"
+    environment:
+      ONTOP_LOG_LEVEL: ${ONTOP_LOG_LEVEL:-debug}

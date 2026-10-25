@@ -1,173 +1,34 @@
-# TIVA over SPARQL (Ontop)
+# OECD TiVA FDVA 2022 (2025 edition) over SPARQL
 
-Serve OECD **TIVA** (Trade in Value Added) annual statistics as a virtual Linked Data graph and query them with **SPARQL**.
+The database and endpoint are released independently, using the same layout as
+[sparql-faostat-ontop](../sparql-faostat-ontop/README.md). RDF remains virtual;
+Ontop rewrites SPARQL into SQL over DuckDB.
 
-The data is never materialized as RDF. Instead, [Ontop](https://ontop-vkg.org/) (an ontology-based data access engine) maps a relational table in **DuckDB** to an **SDMX / QB** data cube on the fly, so every SPARQL query is rewritten into SQL against the database.
+- [database/](database/README.md): Maven resolves pinned source inputs, loads the
+  database, compresses it and attaches a versioned `duckdb.zst` artifact for
+  local installation or remote deployment.
+- [endpoint/](endpoint/README.md): a disposable Maven container resolves that
+  artifact and JDBC, then Docker packages a self-contained read-only service.
+  The Makefile provides building, tests and explicit GHCR publication.
 
-## How it fits together
-
-```
-FDVA.csv.zst  (downloaded by `fetch`)  ──►  DuckDB  (./run/tiva.duckdb, table `tiva`)
-                         │
-                         │  read-only JDBC
-                         ▼
-                      Ontop  ──R2RML (QB/SDMX)──►  virtual RDF graph
-                         │
-                         └──►  SPARQL  http://localhost:8080
-```
-
-## Mapping design goals and constraints
-
-This design keeps RDF virtual while making broad triple queries streamable and
-selective subject/object lookups indexable. Preserve these choices when changing
-the mapping:
-
-- **Avoid unnecessary `DISTINCT` under strict semantics.** RDF triples must be
-  unique even without SPARQL `DISTINCT`. `tiva-lenses.json` declares the
-  observation composite and local-name keys; `tiva-constraints.lst` exposes
-  relational keys. `load.sql` deduplicates small code lists once, with one
-  mapping each for combined source/demand areas and activities. Keep these keys
-  truthful and retain `ontop.cardinalityMode=STRICT`.
-- **Keep the IRI prefix visible and the lookup key indexable.** Ontop inverts a
-  slash-separated template with several placeholders into predicates on its
-  individual fields. A composite/expression index does not provide DuckDB's
-  single-column ART lookup scan. Instead, `load.sql` stores one reversible,
-  hyphen-separated `OBSERVATION_LOCAL_NAME`, and `tiva.r2rml.ttl` uses
-  `.../observation/{OBSERVATION_LOCAL_NAME}`. Ontop retains the constant prefix
-  and rewrites a fixed subject to one indexed equality. Escape component `~`,
-  `-`, and `/` as documented below: a slash inside one placeholder would be
-  R2RML-escaped, and unescaped component hyphens could cause key collisions.
-  Avoid replacing this with an opaque full-IRI column or SQL prefix
-  concatenation; the latter remained a concatenation filter in Ontop 5.5 tests.
-- **Index the values actually compared by generated SQL.** Stored `YEAR`,
-  `UNIT_MULT_CODE`, and `OBS_VALUE_LEXICAL` avoid query-time casts on object
-  lookups. Build the single-column indexes after ingestion and run `ANALYZE`.
-  Code-list primary keys already create indexes.
-
-For future changes, inspect Ontop's reformulated SQL: the broad triple query
-should avoid unnecessary `DISTINCT`, and selective lookups should compare a
-stored column directly to a constant. Check DuckDB's plan for index use and
-verify RDF terms and numeric filters/aggregates. Ontop 5.5/DuckDB 1.5.6 fixture
-checks passed these targets; full-dataset memory and latency remain unmeasured.
-Common objects and unbound triple enumeration may still require scans. See the
-query-planning section below for identifier changes, rebuild steps, and tools.
-
-## Open TODOS
-
-* Vocabulary still uses example namespace. Needs consolidation.
-* Verify area memberships against the 2025 edition. The loaded CSV currently uses the accessible 2023 guide; its old-code companion is not loaded.
-
-## Requirements
-
-- Docker + Docker Compose (v2, for `depends_on` with `condition`)
-
-The first start downloads the dataset (~421MB, zstd-compressed) into `./data/`, pulls the published `aksw/duckdb-shell:1.5.6` image, and prepares the database in `./run/`. Derived columns and indexes increase its size, so allow space for the indexed database as well as the source file.
-
-## Start the endpoint
-
-```bash
-docker compose up -d
+```sh
+# Generate and install into the endpoint's project-local Maven repository:
+mvn -f database/pom.xml -Dmaven.repo.local="$PWD/endpoint/.cache/maven/repository" install
+make -C endpoint build
+make -C endpoint up
 ```
 
-This runs three services in order:
+The new data coordinate is `org.aksw.data.tiva:tiva-fdva-2022-duckdb:duckdb.zst:0.0.1`.
+It is not assumed to be remotely deployed. Install it locally as above or deploy
+it before resolving it remotely. Endpoint and database versions are independent;
+keep published data releases immutable. The service defaults to
+`http://localhost:8080/sparql`.
 
-1. `fetch` downloads the OECD TIVA *Final Demand Value Added by Activity* (FDVA) zstd-compressed CSV into `./data/FDVA.csv.zst`, and the DuckDB JDBC driver into `./jdbc/` (used by `ontop`). Each download is skipped if a nonempty completed file already exists. New downloads are written to `.part` files and renamed only after curl succeeds; a failed download stops `fetch` and prevents `load` from starting. A later attempt overwrites the partial file.
-2. `load` checks `./run/tiva.duckdb.complete` and a nonempty `./run/tiva.duckdb`. If both exist, it exits successfully without opening DuckDB. Otherwise it executes `ontop/load.sql`, reads the source file straight into DuckDB (zstd is decompressed on the fly), and rebuilds `tiva` plus nine small dataset/code-list/membership tables in one transaction in `./run/tiva.duckdb`. The code-list tables have primary keys; area and activity codes combine source and demand values once during loading. The loader also derives the observation local name and lexical columns, builds lookup indexes after ingestion, and runs `ANALYZE`. It creates the completion marker only after DuckDB successfully commits and exits.
-3. `ontop` loads the R2RML mapping (`ontop/tiva.r2rml.ttl`), observation lens (`ontop/tiva-lenses.json`), and constraints, opens a read-only JDBC connection to DuckDB (`ontop/tiva.properties`), and serves SPARQL on port `8080` at `http://localhost:8080/sparql`.
-
-Both the database and its completion marker live in the bind-mounted `./run/`
-directory and survive `docker compose down` / `up`. Subsequent starts skip loading
-and let Ontop serve the prepared database read-only. A failed load leaves no
-marker and fails the `load` service, so Ontop does not start. A marker with a
-missing or empty database triggers loading again.
-
-The generic `aksw/duckdb-shell:1.5.6` image is built from
-`docker/duckdb-shell/Dockerfile`: the pinned official DuckDB binary is copied
-into Debian with `/bin/sh`, its C++ runtime, and CA certificates. Its default
-entrypoint is `duckdb`; override it with `--entrypoint /bin/sh` for shell scripts.
-The image contains no TIVA data or loading logic. Compose mounts
-`loader/load-duckdb.sh` and overrides the entrypoint to run it. Compose uses the
-published image directly, with no local build. For image development, the build context is only `./docker/duckdb-shell`, excluding data
-and database directories.
-`loader/load-duckdb.sh` implements the marker lifecycle. The marker is a manual
-completion flag: source, SQL, and mapping changes do not automatically invalidate
-it. Delete it explicitly when a rebuild is needed.
-
-## Publishing the generic image
-
-The GitHub Actions workflow `.github/workflows/duckdb-shell.yml` builds and
-smoke-tests the image on pull requests. On `main` pushes affecting the image or
-workflow, and manual runs from `main`, it publishes Linux amd64 and arm64 images
-as `aksw/duckdb-shell:1.5.6`, `:latest`, and `:sha-<full commit>`.
-Set the repository Actions variable `DOCKERHUB_USERNAME` to a Docker Hub account
-with push access to `aksw/duckdb-shell`, and the Actions secret `DOCKERHUB_TOKEN`
-to that account's access token. No credentials belong in this repository.
-Publication requires committing and pushing the workflow and configuring those
-credentials. Keep the Dockerfile version, workflow tags, Compose image, and JDBC
-version aligned when upgrading. Version tags are updated on publication; use a
-commit tag or image digest when deployment must be immutable.
-
-For a manual publication after `docker login`:
-
-```bash
-docker buildx build --platform linux/amd64,linux/arm64 \
-  -t aksw/duckdb-shell:1.5.6 -t aksw/duckdb-shell:latest \
-  --push ./docker/duckdb-shell
-```
-
-Compose uses the prebuilt image by default. To explicitly refresh the local image:
-
-```bash
-docker compose pull load
-docker compose up -d
-```
-
-For Flux/Kubernetes, use `image: aksw/duckdb-shell:1.5.6` (preferably pinned by
-digest) in an init container or load Job. Mount the loading script and SQL through
-a ConfigMap, source data and database through volumes, and set
-`command: ["/bin/sh", "/opt/loader/load-duckdb.sh"]` with the database and SQL
-paths as `args`. Ontop must start after loading finishes and mount the same
-persistent database read-only. Kubernetes pulls the published image; it does
-not build the Dockerfile. The completion marker must live beside the database
-on its persistent volume so pod recreation skips completed loading.
-
-## Query it
-
-```bash
-curl -s 'http://localhost:8080/sparql' \
-     --data-urlencode 'query=PREFIX qb: <http://purl.org/linked-data/cube#>
-                        SELECT (COUNT(*) AS ?n) WHERE { ?o a qb:Observation }' \
-     -H 'Accept: application/json'
-```
-
-Each data row is exposed as a `qb:Observation`. Filter on any of the dimensions below to pull real values, e.g. match on `ex:indicator`, `sdmx-dimension:refPeriod`, `ex:valueAddedSourceArea`, … and read the value from `sdmx-measure:obsValue`.
-
-## Manual / advanced
-
-The `fetch` service downloads:
-
-- FDVA dataset: https://maven.inf-ai.duckdns.org/releases/org/aksw/data/thirdparty/org/oecd/tiva/FDVA_2019-2022/1/FDVA_2019-2022-1-FDVA_2022.csv.zst
-- DuckDB JDBC driver: https://repo.maven.apache.org/maven2/org/duckdb/duckdb_jdbc/1.5.6.0/duckdb_jdbc-1.5.6.0.jar
-
-Other dataset sources, if you prefer:
-
-- [Data Explorer – TIVA 2025 edition](https://data-explorer.oecd.org/vis?pg=0&bp=true&tm=%22%28TIVA%29%202025%20edition%22&snb=5&df[ds]=dsDisseminateFinalDMZ&df[id]=DSD_TIVA_FDVA%40DF_FDVA&df[ag]=OECD.STI.PIE&df[vs]=1.1&dq=.._T.W._T..A&pd=2015,&to[TIME_PERIOD]=false)
-- [FDVA 2019–2022 (zip)](https://webfs-sti.oecd.org/files/STI-PIE/TIVA/2025/FDVA/FDVA_2019-2022.zip)
-
-To force a rebuild, stop Ontop, delete only the completion marker, and run the
-loader. The existing database need not be deleted; the SQL rebuild is
-transactional. Start Ontop again only if loading succeeds:
-
-```bash
-docker compose stop ontop
-rm -f ./run/tiva.duckdb.complete
-docker compose run --rm load && docker compose up -d --no-deps ontop
-```
-
-Running `docker compose run --rm load` with the marker present intentionally
-skips loading. Marker deletion also schedules a rebuild on the next ordinary
-`docker compose up`. If an already prepared database has no marker when adopting
-this change, the loader rebuilds it once.
+Old Compose/source-loading instructions and unused caches are archived locally
+under ignored `trash/`. They are not used by the new workflow. In particular,
+existing databases were preserved, not adopted as newly generated artifacts.
+The shared Helm chart at `../helm-charts/charts/ontop` consumes the resulting
+endpoint image without database build logic.
 
 ## Modeled dimensions
 
@@ -188,9 +49,8 @@ Code lists (area, activity, indicator, frequency, unit, multiplier) are generate
 
 ### Area memberships
 
-The original `ontop/load.sql` also loads `ontop/tiva-area-mapping.csv` into
-`tiva_area_membership`, keyed by `(AREA_CODE, MEMBER_CODE)`. The existing Compose
-mount makes the CSV available at `/opt/ontop/input/tiva-area-mapping.csv`.
+The original `database/load.sql` also loads `database/tiva-area-mapping.csv` into
+`tiva_area_membership`, keyed by `(AREA_CODE, MEMBER_CODE)`. The Maven generator assembly makes the CSV available at `/opt/ontop/input/tiva-area-mapping.csv`.
 Its metadata file records the source and extraction rules: the OECD TiVA 2023
 Indicators Guide, Tables A.1 and A.2, printed pages 43 and 44. These are 2023
 memberships using current codes, not verified 2025 membership definitions.
@@ -225,31 +85,11 @@ explicit country enumeration in this CSV, so it also produces no fixed links.
 Consequently these links are not a complete area-to-country map for the 2025
 edition, and they do not allocate aggregate values to countries.
 
-CSV or SQL changes require the normal explicit rebuild: stop Ontop, remove
-`run/tiva.duckdb.complete`, rerun the loader, and restart Ontop after success.
-The completion marker does not automatically track CSV changes. A missing CSV,
+CSV or SQL changes require a new database artifact and endpoint image.
+Regenerate with Maven, choose a new immutable database version, then rebuild
+the endpoint. The build completion marker does not track changes automatically. A missing CSV,
 duplicate pair or invalid populated membership fails the transactional rebuild.
 
-## Files
-
-| File | Role |
-| --- | --- |
-| `docker-compose.yaml` | `fetch` + `load` + `ontop` services |
-| `ontop/tiva.r2rml.ttl` | R2RML mapping: `tiva` → QB/SDMX cube |
-| `ontop/tiva.properties` | JDBC URL/driver, read-only flag, query logging |
-| `ontop/tiva-constraints.lst` | unique columns for `tiva` and the dataset/code-list tables |
-| `ontop/tiva-lenses.json` | observation filter and explicit composite/local-name keys |
-| `ontop/load.sql` | transactional rebuild of facts, derived lookup columns, code lists, and indexes |
-| `docker/duckdb-shell/Dockerfile` | generic DuckDB CLI with a shell and runtime |
-| `.github/workflows/duckdb-shell.yml` | test and publish `aksw/duckdb-shell` to Docker Hub |
-| `tests/test_duckdb_shell.sh` | real image and loader smoke test |
-| `loader/load-duckdb.sh` | skip completed databases and mark successful loads |
-| `tests/test_loader.py` | marker lifecycle tests without Docker or the dataset |
-
-## Notes
-
-- Only rows with a non-null `OBS_VALUE` are exposed as observations.
-- `ONTOP_LOG_LEVEL: debug` (already set in `docker-compose.yaml`) logs the original SPARQL and the generated SQL — handy for debugging.
 
 ## Query planning and duplicate elimination
 
@@ -319,69 +159,18 @@ source dataset before changing index-scan thresholds.
 See [DuckDB indexing](https://duckdb.org/docs/guides/performance/indexing) and
 [CREATE INDEX](https://duckdb.org/docs/current/sql/statements/create_index).
 
-### Applying this change to an existing database
+## Migration validation (25 October 2026)
 
-The new mapping needs the derived columns, indexes, and code-list tables. Stop the endpoint before
-rebuilding the database, then recreate it with the updated configuration:
+The real Maven/Docker generator, compression and attachment lifecycle passed on
+small synthetic inputs. Those archives were installed only as version
+`0.0.0-fixture`, then resolved offline from the project-local Maven cache to build
+`provider/sparql-tiva-ontop:migration-fixture`. Seven Makefile checks and
+four real SPARQL/image checks passed. The database fixture suite passed 10 checks.
+The image tests checked exact fixture counts, fixed-subject lookup, RDF literal
+types, country links, read-only permissions, non-root execution and checksum metadata.
 
-```bash
-docker compose stop ontop
-rm -f ./run/tiva.duckdb.complete
-docker compose run --rm load && docker compose up -d --no-deps --force-recreate ontop
-```
-
-### Inspecting the SQL without executing the large query
-
-For a temporary development endpoint, run the Ontop CLI with `--dev` and pass
-both the constraint and lens files:
-
-```bash
-ontop endpoint --dev \
-  -m ontop/tiva.r2rml.ttl \
-  -p ontop/tiva.properties \
-  -c ontop/tiva-constraints.lst \
-  --lenses ontop/tiva-lenses.json
-```
-
-The CLI example assumes a JDBC URL pointing to your local database and the
-DuckDB JDBC jar in the CLI's `jdbc/` directory. The committed properties use
-`/data/tiva.duckdb`, the path inside the Docker service.
-
-```bash
-curl -fsS 'http://localhost:8080/ontop/reformulate' \
-  --data-urlencode 'query=SELECT * WHERE { ?s ?p ?o } LIMIT 1000' \
-  > /tmp/tiva-query.sql
-```
-
-Compare the SQL for `LIMIT 10` and `LIMIT 1000`, and use DuckDB `EXPLAIN`
-(without `ANALYZE`) to inspect the plan without executing the query. Check for
-duplicate elimination on the observation branches or above the whole union.
-The additional keys and disjoint mappings improve the available uniqueness
-information; they do not guarantee that every Ontop plan will omit `DISTINCT`.
-
-For a diagnostic comparison, temporarily change the properties setting to
-`ontop.cardinalityMode=LOOSE` and restart the endpoint. This relaxes preservation
-of result multiplicities: duplicate triples can affect counts, sums, and limit
-results. Restore `STRICT` for normal use. `LOOSE` does not remove explicit
-`DISTINCT` inside source SQL. Keep `ontop.disableLimitOptimization` at its default
-`false`.
-
-References: [Ontop lenses](https://ontop-vkg.org/guide/advanced/lenses),
-[Ontop 5.5.0 configuration keys](https://raw.githubusercontent.com/ontop/ontop/ontop-5.5.0/core/model/src/main/resources/property_description.json),
-[Ontop CLI](https://ontop-vkg.org/guide/cli.html).
-
-## Loader lifecycle tests
-
-Run from the repository with Python 3:
-
-```bash
-python3 -m unittest discover -s tests -v
-```
-
-These tests check successful completion and skipping, explicit reload after
-marker deletion, retry after a failed load, stale markers, and failure to create
-a nonempty database. They use a fake DuckDB executable and do not load the dataset.
-
-The area-membership fixture test uses Java 11+ and the downloaded JDBC jar.
-It skips when either is missing. It checks actual SQL membership loading,
-repeated rebuilds, missing/invalid CSV rollback and unchanged fact indexes.
+Fixture staging was moved to `endpoint/target/fixture-artifacts/` afterward;
+production resolution must populate `target/artifacts/` before a direct Docker
+build. Production data artifacts were not generated/deployed and endpoint images
+were not pushed. No deployed service was restarted. Full-data resource use and
+counts still need validation on a production build, especially for TiVA.
