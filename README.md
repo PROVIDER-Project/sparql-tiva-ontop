@@ -1,176 +1,90 @@
 # OECD TiVA FDVA 2022 (2025 edition) over SPARQL
 
-The database and endpoint are released independently, using the same layout as
-[sparql-faostat-ontop](../sparql-faostat-ontop/README.md). RDF remains virtual;
-Ontop rewrites SPARQL into SQL over DuckDB.
+Serve OECD TiVA FDVA 2022 (2025 edition) as a virtual RDF data cube using Ontop and DuckDB.
+The [database build](database/README.md) publishes a compressed Maven artifact;
+the [endpoint build](endpoint/README.md) packages it with the mappings.
 
-- [database/](database/README.md): Maven resolves pinned source inputs, loads the
-  database, compresses it and attaches a versioned `duckdb.zst` artifact for
-  local installation or remote deployment.
-- [endpoint/](endpoint/README.md): a disposable Maven container resolves that
-  artifact and JDBC, then Docker packages a self-contained read-only service.
-  The Makefile provides building, tests and explicit GHCR publication.
+## Build and run
+
+Requires Maven, a JDK, GNU Make and Docker with BuildKit/Compose.
+From the repository root:
 
 ```sh
-# Generate and install into the endpoint's project-local Maven repository:
-mvn -f database/pom.xml -Dmaven.repo.local="$PWD/endpoint/.cache/maven/repository" install
-make -C endpoint build
+mvn -f database/pom.xml -P local deploy
 make -C endpoint up
 ```
 
-The new data coordinate is `org.aksw.data.tiva:tiva-fdva-2022-duckdb:duckdb.zst:0.0.1`.
-It is not assumed to be remotely deployed. Install it locally as above or deploy
-it before resolving it remotely. Endpoint and database versions are independent;
-keep published data releases immutable. The service defaults to
-`http://localhost:8080/sparql`.
+The `local` profile publishes the dataset to `database/target/m2` and skips
+installation into your normal Maven repository. Without it, `mvn install` and
+`mvn deploy` also put the dataset alongside your other Maven artifacts
+(usually in `~/.m2/repository`). Source and plugin dependencies still use Maven's
+configured cache in either case.
 
-Old Compose/source-loading instructions and unused caches are archived locally
-under ignored `trash/`. They are not used by the new workflow. In particular,
-existing databases were preserved, not adopted as newly generated artifacts.
-The shared Helm chart at `../helm-charts/charts/ontop` consumes the resulting
-endpoint image without database build logic.
+The endpoint uses `database/target/m2` by default when present, with its own
+Maven cache and remote repositories available too. Override this folder with
+`DATABASE_REPOSITORY`, or set it empty to disable it:
 
-## Modeled dimensions
-
-| Dimension / attribute | Predicate | CSV column |
-| --- | --- | --- |
-| indicator | `ex:indicator` | `MEASURE` |
-| reference period | `sdmx-dimension:refPeriod` | `TIME_PERIOD` |
-| frequency | `sdmx-dimension:freq` | `FREQ` |
-| source area | `ex:valueAddedSourceArea` | `VALUE_ADDED_SOURCE_AREA` |
-| source activity | `ex:valueAddedSourceActivity` | `VALUE_ADDED_SOURCE_ACTIVITY` |
-| demand area | `ex:finalDemandArea` | `FINAL_DEMAND_AREA` |
-| demand activity | `ex:finalDemandActivity` | `FINAL_DEMAND_ACTIVITY` |
-| value (measure) | `sdmx-measure:obsValue` | `OBS_VALUE` |
-| unit | `sdmx-attribute:unitMeasure` | `UNIT_MEASURE` |
-| multiplier | `sdmx-attribute:unitMult` | `UNIT_MULT` |
-
-Code lists (area, activity, indicator, frequency, unit, multiplier) are generated as `skos:ConceptScheme`s from the small unique tables built during loading, and the cube is described as a `qb:DataStructureDefinition`. Source and demand areas share one area mapping; source and demand activities share one activity mapping.
-
-### Area memberships
-
-The original `database/load.sql` also loads `database/tiva-area-mapping.csv` into
-`tiva_area_membership`, keyed by `(AREA_CODE, MEMBER_CODE)`. The Maven generator assembly makes the CSV available at `/opt/ontop/input/tiva-area-mapping.csv`.
-Its metadata file records the source and extraction rules: the OECD TiVA 2023
-Indicators Guide, Tables A.1 and A.2, printed pages 43 and 44. These are 2023
-memberships using current codes, not verified 2025 membership definitions.
-The missing 2025 economy additions particularly affect Africa, Other regions,
-Non-OECD and residual coverage. The old-2021 code-alias CSV is not loaded.
-
-The loader resolves nested memberships to economy leaves in `tiva_area_country`,
-keyed by `(AREA_CODE, COUNTRY_CODE)`. R2RML exposes these pairs using
-`ex:hasCountry`, with shared country IRIs `https://example.org/country/{ISO3}`.
-It emits no labels, types or descriptive triples for country resources; a
-separate authoritative dataset supplies those descriptions. A single-column
-country-code index supports reverse lookups. For example:
-
-```sparql
-PREFIX ex: <https://example.org/tiva/vocab/>
-SELECT ?area WHERE {
-  ?area ex:hasCountry <https://example.org/country/CAN> .
-}
+```sh
+make -C endpoint build DATABASE_REPOSITORY=/path/to/m2
 ```
 
-The result includes Canada's own `.../tiva/area/CAN` resource and groups such as
-NAFTA, OECD, APEC and G20. Country-level areas have identity links. Nested
-G20/EU27_2020 membership is flattened and deduplicated, so France's multiple
-paths create only one G20 country link. Mapping endpoints are included in the
-area code list even when absent from a fact subset.
+Settings can also go in `endpoint/.env`; see
+[endpoint configuration](endpoint/README.md#configuration).
+The service runs at [localhost:8080/sparql](http://localhost:8080/sparql).
+Use `make -C endpoint down` to stop it and `make -C endpoint help` for all targets.
 
-The 2023 group definitions remain unchanged. AGO, COD, STP and ARE are recognized
-as separately represented 2025 economy codes for identity links only; they do
-not silently update the older group definitions. WXD is residual and has no
-country link. Domestic (`D`) needs observation context. World (`W`) has no
-explicit country enumeration in this CSV, so it also produces no fixed links.
-Consequently these links are not a complete area-to-country map for the 2025
-edition, and they do not allocate aggregate values to countries.
+TiVA needs substantial memory and disk: the previous raw database was about
+13 GB, before temporary files, indexes, compression and Docker storage.
 
-CSV or SQL changes require a new database artifact and endpoint image.
-Regenerate with Maven, choose a new immutable database version, then rebuild
-the endpoint. The build completion marker does not track changes automatically. A missing CSV,
-duplicate pair or invalid populated membership fails the transactional rebuild.
+## Publish
 
+Database and endpoint versions are independent. Set a new POM version for each
+immutable data release, then publish with Maven credentials from `settings.xml`:
 
-## Query planning and duplicate elimination
-
-The default is `ontop.cardinalityMode=STRICT`. An RDF graph contains each triple
-once, so Ontop may introduce SQL duplicate elimination even when the SPARQL
-query has no `DISTINCT`.
-
-The observation mapping uses the `tiva_observations` BasicLens. The loader stores
-`YEAR` as a string and constructs an `OBSERVATION_LOCAL_NAME` from the eight key
-fields in this order: DATAFLOW, MEASURE, FREQ, YEAR, VALUE_ADDED_SOURCE_AREA,
-VALUE_ADDED_SOURCE_ACTIVITY, FINAL_DEMAND_AREA, FINAL_DEMAND_ACTIVITY. The lens
-explicitly declares both the composite key and the local-name key. These retain
-the data-uniqueness assumption already present in the original `tiva` constraint;
-the lens declares keys to Ontop rather than enforcing them in DuckDB. Any change
-of source data must preserve that key. Rows missing an observation IRI component
-are filtered out, as R2RML would not generate their subject; `OBS_VALUE` must
-also be non-null.
-
-**Observation identifiers have changed** from slash-separated key components to
-a single hyphen-separated local name. For example:
-
-```text
-Before: https://example.org/tiva/observation/FDVA/M/A/2019/A/X/B/Y
-After:  https://example.org/tiva/observation/FDVA-M-A-2019-A-X-B-Y
+```sh
+mvn -f database/pom.xml deploy \
+  -DaltDeploymentRepository=aksw-data-releases::https://maven.inf-ai.duckdns.org/releases
+make -C endpoint login GHCR_USER=YOUR_GITHUB_USERNAME
+make -C endpoint publish VERSION=0.0.2 DATABASE_VERSION=0.0.1
 ```
 
-Inside a component, `~`, `-`, and `/` become `~7E`, `~2D`, and `~2F` respectively,
-with `~` escaped first. This makes the encoding reversible and keeps separator
-hyphens unambiguous. The R2RML template applies normal escaping to the complete
-local name. The constant observation prefix remains in the subject template,
-so Ontop can distinguish it from the dataset and code-list prefixes. Dataset,
-code-list and metadata IRIs, and observation literal datatypes, are unchanged.
+Current database coordinates:
+`org.aksw.data.tiva:tiva-fdva-2022-duckdb:duckdb.zst:0.0.1`.
+Building an endpoint locally does not publish it.
 
-Code-list deduplication happens once during loading. Each small table has an
-enforced primary key, and the external constraint file also exposes that key to
-Ontop. These lists include codes from all source rows, including rows with null
-observation values, as the original mappings did.
+## Design and scope
 
-### Subject and object lookup indexes
+The build follows [FAOSTAT](../sparql-faostat-ontop/README.md): source data and
+scripts are bind mounted into the generation containers; completion markers
+skip repeated loading and compression. The endpoint image contains an unpacked,
+read-only database, with data layers before JDBC and configuration.
 
-DuckDB's ART index scans support single-column equality and `IN` filters;
-composite and expression indexes do not currently provide these lookup scans.
-The loader therefore stores derived values in ordinary columns and creates
-12 single-column ART indexes on `tiva`:
+TiVA contains **FDVA 2022 only**, from the 2025 edition. Group memberships
+come from the 2023 guide and are not verified against 2025 definitions.
+Added economy identity links do not silently update those memberships.
 
-- `OBSERVATION_LOCAL_NAME` for observation subjects;
-- `DATAFLOW`, `MEASURE`, `YEAR`, `FREQ`, `VALUE_ADDED_SOURCE_AREA`,
-  `VALUE_ADDED_SOURCE_ACTIVITY`, `FINAL_DEMAND_AREA`, `FINAL_DEMAND_ACTIVITY`,
-  `UNIT_MEASURE`, and `UNIT_MULT_CODE` for the mapped IRI/year objects;
-- `OBS_VALUE_LEXICAL` for exact RDF observation-value objects.
+After changing database inputs or loading settings, rebuild with
+`mvn -f database/pom.xml -P local clean deploy`. This removes `target/m2` too.
+Use new release versions for changed published data; Maven may reuse cached
+releases. See [model and country-link details](docs/model.md).
+The sibling [Helm chart](../helm-charts/charts/ontop/README.md) deploys the
+selected endpoint image independently.
 
-`YEAR`, `UNIT_MULT_CODE`, and `OBS_VALUE_LEXICAL` are stored string conversions of
-TIME_PERIOD, UNIT_MULT, and OBS_VALUE. Mapping these directly avoids query-time
-casts that prevent index use. The numeric CSV columns remain available for SQL
-analysis. The code-list/dataset tables already have ART indexes through their
-primary keys, so no duplicate indexes are created on them.
+## Tests
 
-A fixed subject such as the new example above translates to an equality on
-`OBSERVATION_LOCAL_NAME`, rather than eight separate component predicates.
-Selective mapped object lookups can similarly use their stored column indexes.
-Unbound `?s ?p ?o` queries are scans; indexes do not make enumeration cheap.
-Objects matching a large fraction of the facts may also use scans: DuckDB
-selects the plan by estimated cardinality. Indexes and stored columns increase
-load time, disk space, and runtime memory; measure these costs on the full
-source dataset before changing index-scan thresholds.
+See [database tests](database/README.md#tests) for fixtures and script checks.
+`make -C endpoint check` verifies orchestration; `make -C endpoint test` also
+builds and queries an isolated endpoint container.
 
-See [DuckDB indexing](https://duckdb.org/docs/guides/performance/indexing) and
-[CREATE INDEX](https://duckdb.org/docs/current/sql/statements/create_index).
+## Sources and licence
 
-## Migration validation (25 October 2026)
-
-The real Maven/Docker generator, compression and attachment lifecycle passed on
-small synthetic inputs. Those archives were installed only as version
-`0.0.0-fixture`, then resolved offline from the project-local Maven cache to build
-`provider/sparql-tiva-ontop:migration-fixture`. Seven Makefile checks and
-four real SPARQL/image checks passed. The database fixture suite passed 10 checks.
-The image tests checked exact fixture counts, fixed-subject lookup, RDF literal
-types, country links, read-only permissions, non-root execution and checksum metadata.
-
-Fixture staging was moved to `endpoint/target/fixture-artifacts/` afterward;
-production resolution must populate `target/artifacts/` before a direct Docker
-build. Production data artifacts were not generated/deployed and endpoint images
-were not pushed. No deployed service was restarted. Full-data resource use and
-counts still need validation on a production build, especially for TiVA.
+OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added by Activity,
+2022 (accessed 11 October 2026). Membership extraction: OECD (2023), *Guide to
+OECD TiVA Indicators*, Tables A.1/A.2 (extracted 13 October 2026).
+[OECD terms](https://www.oecd.org/en/about/terms-conditions.html) and the guide's
+applicable terms remain in force; no blanket CC BY licence is asserted.
+Retain OECD acknowledgment and require downstream recipients to retain it.
+This is an adaptation of an original work by the OECD. The opinions expressed
+and arguments employed in this adaptation should not be reported as representing
+the official views of the OECD or of its Member countries.
+See the [membership provenance record](database/tiva-area-mapping.csv.meta.md).

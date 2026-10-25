@@ -61,7 +61,6 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
     <data.repository.url>https://maven.inf-ai.duckdns.org/releases</data.repository.url>
     <source.groupId>org.aksw.data.thirdparty.org.oecd.tiva</source.groupId>
     <duckdb.image>aksw/duckdb-shell:1.5.6</duckdb.image>
-    <generator.image>datagen-${project.artifactId}:${project.version}</generator.image>
     <generator.timeout>7200000</generator.timeout>
     <compressor.base.image>debian:bookworm-slim</compressor.base.image>
     <compressor.image>compress-${project.artifactId}:${project.version}</compressor.image>
@@ -76,6 +75,7 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
     <output.path>${project.build.directory}/${output.filename}</output.path>
     <source.artifactId>FDVA_2019-2022</source.artifactId>
     <source.version>1</source.version>
+    <local.deployment.directory>${project.build.directory}/m2</local.deployment.directory>
   </properties>
   <repositories>
     <repository>
@@ -195,6 +195,22 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
   </build>
   <profiles>
     <profile>
+      <id>local</id>
+      <properties>
+        <maven.install.skip>true</maven.install.skip>
+      </properties>
+      <distributionManagement>
+        <repository>
+          <id>tiva-local-build</id>
+          <url>file://${local.deployment.directory}</url>
+        </repository>
+        <snapshotRepository>
+          <id>tiva-local-build</id>
+          <url>file://${local.deployment.directory}</url>
+        </snapshotRepository>
+      </distributionManagement>
+    </profile>
+    <profile>
       <id>generate-data</id>
       <activation>
         <property>
@@ -209,62 +225,32 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
             <artifactId>docker-maven-plugin</artifactId>
             <version>${docker-maven-plugin.version}</version>
             <configuration>
-              <removeVolumes>true</removeVolumes>
               <images>
                 <image>
                   <alias>tiva-generator</alias>
-                  <name>${generator.image}</name>
-                  <build>
-                    <from>${duckdb.image}</from>
-                    <assembly>
-                      <targetDir>/</targetDir>
-                      <exportTargetDir>false</exportTargetDir>
-                      <inline>
-                        <fileSets>
-                          <fileSet>
-                            <directory>${input.directory}</directory>
-                            <outputDirectory>data</outputDirectory>
-                            <includes>
-                              <include>FDVA.csv.zst</include>
-                            </includes>
-                          </fileSet>
-                        </fileSets>
-                        <files>
-                          <file>
-                            <source>${project.basedir}/load.sql</source>
-                            <outputDirectory>opt/ontop/input</outputDirectory>
-                          </file>
-                          <file>
-                            <source>${project.basedir}/loader/load-duckdb.sh</source>
-                            <outputDirectory>opt/loader</outputDirectory>
-                          </file>
-                          <file>
-                            <source>${project.basedir}/tiva-area-mapping.csv</source>
-                            <outputDirectory>opt/ontop/input</outputDirectory>
-                          </file>
-                        </files>
-                      </inline>
-                    </assembly>
-                    <runCmds>
-                      <run>mkdir -p /output</run>
-                    </runCmds>
-                    <volumes>
-                      <volume>/output</volume>
-                    </volumes>
-                    <entryPoint>
+                  <name>${duckdb.image}</name>
+                  <run>
+                    <entrypoint>
                       <exec>
                         <arg>/bin/sh</arg>
                         <arg>/opt/loader/load-duckdb.sh</arg>
                       </exec>
-                    </entryPoint>
+                    </entrypoint>
                     <cmd>
                       <exec>
                         <arg>/output/${database.filename}</arg>
                         <arg>/opt/ontop/input/load.sql</arg>
+                        <arg>/output/${output.filename}</arg>
                       </exec>
                     </cmd>
-                  </build>
-                  <run>
+                    <volumes>
+                      <bind>
+                        <volume>${project.build.directory}:/output</volume>
+                        <volume>${input.directory}:/data:ro</volume>
+                        <volume>${project.basedir}:/opt/ontop/input:ro</volume>
+                        <volume>${project.basedir}/loader:/opt/loader:ro</volume>
+                      </bind>
+                    </volumes>
                     <wait>
                       <time>${generator.timeout}</time>
                       <exit>0</exit>
@@ -276,17 +262,6 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
                   <name>${compressor.image}</name>
                   <build>
                     <from>${compressor.base.image}</from>
-                    <assembly>
-                      <targetDir>/opt/compressor</targetDir>
-                      <exportTargetDir>false</exportTargetDir>
-                      <inline>
-                        <files>
-                          <file>
-                            <source>${project.basedir}/loader/compress-duckdb.sh</source>
-                          </file>
-                        </files>
-                      </inline>
-                    </assembly>
                     <runCmds>
                       <run>apt-get update &amp;&amp; apt-get install -y --no-install-recommends zstd &amp;&amp; rm -rf /var/lib/apt/lists/*</run>
                     </runCmds>
@@ -307,23 +282,16 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
                   </build>
                   <run>
                     <volumes>
-                      <from>
-                        <image>${docker.container.tiva-generator.id}</image>
-                      </from>
+                      <bind>
+                        <volume>${project.build.directory}:/output</volume>
+                        <volume>${project.basedir}/loader:/opt/compressor:ro</volume>
+                      </bind>
                     </volumes>
                     <wait>
                       <time>${compressor.timeout}</time>
                       <exit>0</exit>
                     </wait>
                   </run>
-                  <copy>
-                    <entries>
-                      <entry>
-                        <containerPath>/output/${output.filename}</containerPath>
-                        <hostDirectory>${project.build.directory}</hostDirectory>
-                      </entry>
-                    </entries>
-                  </copy>
                 </image>
               </images>
             </configuration>
@@ -332,7 +300,6 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
                 <id>generate-preloaded-database</id>
                 <phase>process-resources</phase>
                 <goals>
-                  <goal>build</goal>
                   <goal>start</goal>
                 </goals>
                 <configuration>
@@ -345,7 +312,6 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
                 <goals>
                   <goal>build</goal>
                   <goal>start</goal>
-                  <goal>copy</goal>
                 </goals>
                 <configuration>
                   <filter>tiva-compressor</filter>

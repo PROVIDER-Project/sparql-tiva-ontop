@@ -1,112 +1,115 @@
-# OECD TiVA FDVA 2022 (2025 edition): Ontop endpoint
+# OECD TiVA FDVA 2022 (2025 edition) Ontop endpoint
 
-The Dockerfile packages a resolved `tiva.duckdb.zst` and JDBC, expanding the
-database at build time. Startup requires no download or database ingestion.
-Maven data coordinate: `org.aksw.data.tiva:tiva-fdva-2022-duckdb:duckdb.zst:0.0.1`. The first artifact must be installed locally
-or deployed before the endpoint resolver can find it.
+Package the preloaded OECD TiVA FDVA 2022 (2025 edition) database, JDBC driver and mappings into an Ontop
+image. Startup requires no data download or ingestion.
 
-## Build and publish
+## Build and run
 
-Run in this folder:
+Requires GNU Make and Docker with BuildKit/Compose. From this folder:
 
 ```sh
-make help
-make resolve
 make build
-make test
 make up
-make logs
-make down
-# Explicit publication, after authenticating:
-make login GHCR_USER=YOUR_GITHUB_USERNAME
-make publish VERSION=0.0.1 DATABASE_VERSION=0.0.1
 ```
 
-`make build` always runs resolution first. `make up` builds then recreates this
-provider's Compose service, on `http://localhost:8080/sparql` by default.
-There is no runtime database volume, JDBC bind mount or loading service.
-The default image is `ghcr.io/provider-project/sparql-tiva-ontop:0.0.1`;
-building that tag locally does not publish it. Compose keeps the explicit project
-name `sparql-tiva-ontop`. `PORT` overrides the host port.
-
-## Versions and Maven configuration
-
-`VERSION` selects the image version, `DATABASE_VERSION` the preloaded artifact
-version, and `DUCKDB_JDBC_VERSION` the JDBC version (default 1.5.6.0). `REPOSITORY`
-or `IMAGE` overrides the image destination. `DATA_REPOSITORY_URL` defaults to
-https://maven.inf-ai.duckdns.org/releases . Keep released database versions immutable.
-Mappings and configuration come from this checkout.
-
-The same resolver used by FAOSTAT runs standalone Dependency Plugin 3.11.0 in a
-disposable Maven 3.9.11 / JDK 17 container. It resolves local installs/cached
-artifacts first, then configured repositories. Checksums are checked on remote
-resolution; SHA-1 sidecars record the resolved inputs in the endpoint image.
-The helper runs as your host UID/GID so output stays host-owned.
-
-- `M2_DIR` defaults to this folder's `.cache/maven`; its `repository/` is mounted
-  writable. Missing artifacts and plugin dependencies are cached there.
-- `M2_SETTINGS` defaults to `$HOME/.m2/settings.xml`, independently of the cache.
-- `M2_SECURITY` defaults to `$HOME/.m2/settings-security.xml`. Existing settings
-  files mount read-only under the helper's Maven user home; missing files are optional.
-- `.env` uses Make assignment syntax (unquoted paths). Copy `.env.example` to
-  `.env` for local overrides. Command-line values override `.env`, then environment
-  values, then defaults. `ENV_FILE` selects another config file.
-- `MAVEN_OFFLINE=true` works once the selected artifacts and plugin dependencies
-  are available in the selected cache. `MAVEN_IMAGE` overrides the helper image.
+The database is resolved from `../database/target/m2` by default when present,
+with a separate Maven cache and remote repositories available too. To populate
+that project-local repository first:
 
 ```sh
-make build M2_DIR="$HOME/.m2"
-make build M2_DIR=/mnt/datasets/tiva-m2
-make show-config
+mvn -f ../database/pom.xml -P local deploy
 ```
 
-Global resolver settings supply Central and the data repository. User settings
-provide mirrors, profiles and server credentials. The explicit Maven local-repo
-argument overrides a settings.xml localRepository value. Host environment variables
-referenced by settings are not automatically forwarded into the helper.
+The `local` profile skips installation into your normal Maven repository,
+keeping the generated dataset separate from other artifacts. Without it,
+`mvn install` and `mvn deploy` also install the dataset into the configured
+local repository (usually `~/.m2/repository`).
 
-Resolved inputs are staged under `target/artifacts/`. Both that directory and
-`.cache/` are gitignored; neither cache nor settings enters the runtime image.
-Docker images and layers still use Docker's normal storage. Avoid simultaneous
-builds sharing this output directory. Delete `.cache/maven/` to clear Maven's cache
-or `target/` to clear staged inputs.
+The service runs at [localhost:8080/sparql](http://localhost:8080/sparql).
+`make up` builds before starting; `make down` stops it. Use `make help` for all
+targets and `make show-config` to inspect settings.
 
-Direct `docker build` or `docker compose build` requires matching artifacts
-already staged by `make resolve`. Use `make build` for the complete workflow;
-`make -C endpoint …` from the root and `make -f /absolute/path/Makefile …` work too.
+## Configuration
 
-## Runtime and checks
+Override settings on Make's command line, through the environment, or in an
+optional `.env` file (copy `.env.example`; use unquoted Make assignments).
+Command-line values take precedence over `.env`, then environment values.
 
-Ontop 5.5.0 runs as its unprivileged `ontop` user. DuckDB is mode 0444, opened
-read-only through JDBC, with writable spill files under `/tmp/duckdb`. Runtime
-layers add the database first, JDBC second and endpoint mappings/provenance last.
-The `endpoint-base` target is available for downstream mapping customizations.
-The `.dockerignore` allowlist excludes credentials and all unrelated local files.
+```sh
+make build DATABASE_REPOSITORY=/path/to/m2
+make build VERSION=0.0.2 DATABASE_VERSION=0.0.1
+```
 
-`make check` exercises orchestration without a Docker daemon or network.
-`make test` also builds the image and runs real SPARQL/image checks in an isolated
-container with networking disabled and no host bind mounts. It does not restart
-an existing deployment. Optional `EXPECTED_OBSERVATIONS` and `EXPECTED_COUNTRY_LINKS`
-assert exact counts when testing known fixtures or a validated release.
+| Variable | Default / purpose |
+| --- | --- |
+| `DATABASE_REPOSITORY` | `../database/target/m2`; set empty to disable |
+| `M2_DIR` | `.cache/maven`; contains the writable `repository/` cache |
+| `M2_SETTINGS` | `~/.m2/settings.xml` |
+| `M2_SECURITY` | `~/.m2/settings-security.xml` |
+| `DATA_REPOSITORY_URL` | `https://maven.inf-ai.duckdns.org/releases` |
+| `VERSION` / `DATABASE_VERSION` | Independent endpoint/database versions; both `0.0.1` |
+| `DUCKDB_JDBC_VERSION` | `1.5.6.0`; keep compatible with the database |
+| `REPOSITORY` | `ghcr.io/provider-project/sparql-tiva-ontop` |
+| `IMAGE` | `$(REPOSITORY):$(VERSION)` |
+| `PORT` | `8080` |
 
-Source attribution and transformation policy are in [the database README](../database/README.md)
-and the metadata copied into `/opt/ontop/input/`. Select this image in the shared
-`../../helm-charts/charts/ontop` chart; the chart needs no source/database logic.
+The publication folder is read-only; `M2_DIR` is a separate writable cache.
+To resolve a normal host Maven installation instead:
 
-## Attribution
+```sh
+make build M2_DIR="$HOME/.m2" DATABASE_REPOSITORY=
+```
 
-Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added
-by Activity, 2022; source https://webfs-sti.oecd.org/files/STI-PIE/TIVA/2025/FDVA/FDVA_2019-2022.zip
-(accessed 11 October 2026). Membership extraction: OECD (2023), Guide to OECD TiVA
-Indicators, Tables A.1/A.2 (extracted 13 October 2026).
+Existing settings/security files are mounted read-only into the Maven helper.
+Mirrors, profiles and credentials apply; cache/settings files stay out of image
+layers. A broad `mirrorOf=*` needs an exclusion such as `*,!tiva-local-build`
+to allow direct reads from the project-local publication repository.
 
-The artifact retains [OECD data terms](https://www.oecd.org/en/about/terms-conditions.html)
-and the guide's applicable terms; it does not assert a blanket CC BY licence.
-Retain the OECD acknowledgment and require downstream recipients to retain it.
-This is an adaptation of an original work by the OECD. The opinions expressed
-and arguments employed in this adaptation should not be reported as representing
-the official views of the OECD or of its Member countries.
+Maven uses cached releases first, so publish changed data under a new version.
+`MAVEN_OFFLINE=true` works after all artifacts and plugins have been cached;
+even a file repository needs an initial normal resolution.
 
-The former runtime database is about 13 GB; a rebuild also needs temporary/index
-space, a compressed output and Docker storage. Do not budget only the archive's
-size. Full-data generation must be scheduled on a machine with sufficient space.
+## Publish to GHCR
+
+```sh
+make login GHCR_USER=YOUR_GITHUB_USERNAME
+make publish VERSION=0.0.2 DATABASE_VERSION=0.0.1
+```
+
+`publish` builds then pushes; `build` alone stays local. Authenticate with a
+GitHub token that can write packages and choose public package visibility if
+anonymous pulls are needed. See [GitHub's registry documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry).
+Use new endpoint versions for mapping/configuration changes; the database
+version can stay fixed.
+
+## Design and storage
+
+`make resolve` runs a disposable Maven container to copy the database and JDBC
+artifacts into `target/artifacts`; `make build` resolves before Docker packaging.
+The helper uses your UID/GID. It does not generate or publish the database.
+Direct `docker build` requires an earlier `make resolve`.
+
+The image expands the database into its first added runtime layer, followed by
+JDBC, mappings and configuration. Ontop runs as a non-root user; DuckDB is
+read-only and spill files use `/tmp/duckdb`. Allow space for the expanded
+database, temporary files, runtime and build cache. The previous raw TiVA database
+was about 13 GB.
+
+Maven downloads live in `.cache/maven/repository`; staged files live in
+`target/artifacts`. Docker manages image layers and its build cache separately.
+Cleaning the database project removes its publication folder, but leaves the
+endpoint cache intact. Avoid concurrent builds sharing an output folder.
+
+For Kubernetes, use the sibling [Ontop Helm chart](../../helm-charts/charts/ontop/README.md)
+and select the published image tag or digest.
+
+## Tests
+
+`make check` runs orchestration checks without Docker. `make test` also builds
+the image and checks SPARQL results, types, country links and runtime permissions
+in an isolated container. Python 3 is required.
+
+## Sources and licence
+
+See the [source attribution and licence](../README.md#sources-and-licence).
+Attribution and geographic provenance are also included in the image.
