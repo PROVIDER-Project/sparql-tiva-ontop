@@ -78,6 +78,10 @@ builds and queries an isolated endpoint container.
 
 ## Sources and licence
 
+Original project material is licensed under [Apache-2.0](LICENSE).
+[Licensing notes](LICENSING.md) distinguish third-party/data terms and declare
+that the information about those terms was derived with AI assistance.
+
 OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added by Activity,
 2022 (accessed 11 October 2026). Membership extraction: OECD (2023), *Guide to
 OECD TiVA Indicators*, Tables A.1/A.2 (extracted 13 October 2026).

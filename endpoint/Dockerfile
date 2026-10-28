@@ -29,6 +29,9 @@ COPY --chown=ontop:ontop target/artifacts/duckdb_jdbc.jar.sha1 /opt/ontop/input/
 FROM endpoint-base AS endpoint
 ARG ENDPOINT_VERSION
 
+COPY --chown=ontop:ontop LICENSE LICENSING.md /opt/ontop/licenses/
+COPY --chown=ontop:ontop third-party/ /opt/ontop/licenses/third-party/
+
 COPY --chown=ontop:ontop ontop/tiva.r2rml.ttl ontop/tiva.properties ontop/tiva-constraints.lst ontop/tiva-lenses.json /opt/ontop/input/
 COPY --chown=ontop:ontop README.md ontop/tiva-area-mapping.csv.meta.md /opt/ontop/input/
 

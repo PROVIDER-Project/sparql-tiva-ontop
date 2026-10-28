@@ -37,7 +37,11 @@ Attribution: OECD (2025), Trade in Value Added (TiVA), Final Demand Value Added 
       <name>OECD Terms and Conditions: Data</name>
       <url>https://www.oecd.org/en/about/terms-conditions.html</url>
       <distribution>repo</distribution>
-      <comments>Source attribution and transformation notices must be retained. OECD data and the 2023 guide extraction retain their applicable OECD terms. No blanket CC BY licence is asserted. The data terms require carrying the acknowledgment requirement forward to sub-licensees; third-party exceptions remain applicable. See the accompanying provenance metadata.</comments>
+      <comments>Source attribution and transformation notices must be retained. OECD data and the 2023 guide extraction retain their applicable OECD terms. No blanket CC BY licence is asserted. The data terms require carrying the acknowledgment requirement forward to sub-licensees; third-party exceptions remain applicable. See the accompanying provenance metadata.
+        Licence identification and interpretation were AI-assisted in an attempt to
+        be as accurate as possible. This summary is not legal advice; authoritative
+        upstream licences and dataset-specific terms govern.
+      </comments>
     </license>
   </licenses>
   <scm>
