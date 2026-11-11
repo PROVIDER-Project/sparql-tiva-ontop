@@ -81,6 +81,7 @@ build: resolve ## Resolve artifacts and build the endpoint image
 
 check: ## Check orchestration and available JDBC streaming checks without Docker
 	cd "$(ENDPOINT_DIR)"
+	$(PYTHON) -m unittest discover -s tests -p test_namespaces.py -v
 	$(PYTHON) -m unittest discover -s tests -p test_makefile.py -v
 	$(PYTHON) -m unittest discover -s tests -p test_jdbc_streaming.py -v
 

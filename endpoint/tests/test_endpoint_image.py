@@ -61,7 +61,7 @@ class EndpointImageTests(unittest.TestCase):
         self.assertEqual({r['year']['value'] for r in rows}, {'2022'})
 
     def test_country_links(self):
-        rows = self.query('SELECT (COUNT(*) AS ?n) WHERE { ?area <https://example.org/tiva/vocab/hasCountry> ?country }')
+        rows = self.query('SELECT (COUNT(*) AS ?n) WHERE { ?area <https://schema.projekt-provider.de/global#hasCountry> ?country }')
         self.assertGreater(int(rows[0]['n']['value']), 0)
         if os.environ.get('EXPECTED_COUNTRY_LINKS'):
             self.assertEqual(int(rows[0]['n']['value']), int(os.environ['EXPECTED_COUNTRY_LINKS']))
@@ -70,7 +70,7 @@ class EndpointImageTests(unittest.TestCase):
         rows = self.query('SELECT ?o ?v WHERE { ?o a <http://purl.org/linked-data/cube#Observation>; <http://purl.org/linked-data/sdmx/2009/measure#obsValue> ?v } LIMIT 1')
         self.assertEqual(len(rows), 1)
         iri = rows[0]['o']['value']
-        self.assertTrue(iri.startswith('https://example.org/tiva/observation/'))
+        self.assertTrue(iri.startswith('https://data.projekt-provider.de/tiva/observation/'))
         fixed = self.query('SELECT ?v ?year WHERE { <' + iri + '> <http://purl.org/linked-data/sdmx/2009/measure#obsValue> ?v; <http://purl.org/linked-data/sdmx/2009/dimension#refPeriod> ?year }')
         self.assertEqual(len(fixed), 1)
         self.assertEqual(fixed[0]['v'], rows[0]['v'])

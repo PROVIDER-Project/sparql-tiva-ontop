@@ -3,7 +3,10 @@
 !Dockerfile
 !README.md
 !ontop/
-!ontop/tiva.r2rml.ttl
+!ontop/tiva.r2rml.ttl.in
+!ontop/namespaces.sh
+!ontop/expand.sh
+!ontop/start.sh
 !ontop/tiva.properties
 !ontop/tiva-constraints.lst
 !ontop/tiva-lenses.json
