@@ -17,7 +17,7 @@ RUN zstd --decompress /artifacts/tiva.duckdb.zst -o /artifacts/tiva.duckdb \
 
 # Stable data layer first, before driver or endpoint-specific configuration.
 # This target can also be built/tagged for downstream FROM-based customization.
-FROM ontop/ontop:5.5.0 AS data-base
+FROM ghcr.io/provider-project/provider-ontop:5.5.0-1 AS data-base
 COPY --from=database --chown=ontop:ontop /artifacts/tiva.duckdb /data/tiva.duckdb
 COPY --from=database --chown=ontop:ontop /artifacts/tiva.duckdb.zst.sha1 /opt/ontop/input/
 
@@ -46,7 +46,7 @@ ENV ONTOP_MAPPING_FILE=/tmp/provider-tiva.r2rml.ttl \
     ONTOP_CONSTRAINT_FILE=/opt/ontop/input/tiva-constraints.lst \
     ONTOP_LENSES_FILE=/opt/ontop/input/tiva-lenses.json \
     ONTOP_LOG_LEVEL=debug
-# Expand namespace defaults/overrides, then delegate to Ontop's entrypoint.
+# Expand namespace defaults/overrides, then delegate through provider-ontop's property configuration.
 ENTRYPOINT ["/bin/sh", "/opt/ontop/input/start.sh"]
 
 ARG TIVA_VERSION

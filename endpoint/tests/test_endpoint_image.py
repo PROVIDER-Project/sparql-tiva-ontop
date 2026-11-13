@@ -23,7 +23,8 @@ class EndpointImageTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.container = cls.docker('run', '-d', '--network', 'none', IMAGE)
+        cls.container = cls.docker('run', '-d', '--network', 'none',
+                                   '-e', 'ONTOP_PROPERTIES=ontop.query.defaultTimeout=60', IMAGE)
         cls.addClassCleanup(subprocess.run, ['docker', 'rm', '-f', '-v', cls.container],
                             capture_output=True, check=False, timeout=30)
         deadline = time.monotonic() + 120
@@ -41,6 +42,17 @@ class EndpointImageTests(unittest.TestCase):
         response = self.docker('exec', self.container, 'wget', '-qO-',
                                '--header=Accept: application/sparql-results+json', url)
         return json.loads(response)['results']['bindings']
+
+    def test_runtime_property_overrides_preserve_bundled_settings(self):
+        # The actual Java process must use the merged file, not the baked one.
+        environment = self.docker('exec', self.container, 'cat', '/proc/1/environ')
+        settings = dict(entry.split('=', 1) for entry in environment.split('\0') if '=' in entry)
+        path = settings['ONTOP_PROPERTIES_FILE']
+        self.assertTrue(path.startswith('/tmp/ontop-runtime-'), path)
+        properties = self.docker('exec', self.container, 'cat', path)
+        self.assertIn('ontop.query.defaultTimeout=60', properties)
+        self.assertIn('jdbc.property.jdbc_stream_results=true', properties)
+        self.assertIn('jdbc.property.duckdb.read_only=true', properties)
 
     def test_unbounded_spo_can_be_stopped_after_ten_rows(self):
         url = 'http://localhost:8080/sparql?' + urlencode({'query': 'SELECT * { ?s ?p ?o }'})

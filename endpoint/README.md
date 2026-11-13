@@ -51,7 +51,7 @@ make build VERSION=0.0.2 DATABASE_VERSION=0.0.1
 | `M2_SETTINGS` | `~/.m2/settings.xml` |
 | `M2_SECURITY` | `~/.m2/settings-security.xml` |
 | `DATA_REPOSITORY_URL` | `https://maven.inf-ai.duckdns.org/releases` |
-| `VERSION` / `DATABASE_VERSION` | Independent endpoint/database versions; both `0.0.1` |
+| `VERSION` / `DATABASE_VERSION` | Independent endpoint/database versions; `0.0.4` / `0.0.1` |
 | `DUCKDB_JDBC_VERSION` | `1.5.6.0`; keep compatible with the database |
 | `REPOSITORY` | `ghcr.io/provider-project/sparql-tiva-ontop` |
 | `IMAGE` | `$(REPOSITORY):$(VERSION)` |
@@ -120,6 +120,25 @@ endpoint cache intact. Avoid concurrent builds sharing an output folder.
 For Kubernetes, use the sibling [Ontop Helm chart](../../helm-charts/charts/ontop/README.md)
 and select the published image tag or digest.
 
+## Runtime properties and timeouts
+
+The base image is `ghcr.io/provider-project/provider-ontop:5.5.0-1` (Ontop 5.5.0).
+It supplies a default query timeout of 120 seconds. Override or add Java
+properties at container startup, for example with Compose:
+
+```yaml
+environment:
+  ONTOP_PROPERTIES: |
+    ontop.query.defaultTimeout=60
+    jdbc.property.memory_limit=1GB
+```
+
+`ONTOP_PROPERTIES` overrides the bundled properties without changing the file;
+namespace expansion still runs first. A missing explicitly selected properties
+file fails startup. Set the timeout to `0` to disable it. This JDBC timeout covers
+SQL execution, not a hard deadline for subsequent result streaming. Engine
+parallelism remains unchanged.
+
 ## Streaming query results
 
 `jdbc.property.jdbc_stream_results=true` enables DuckDB JDBC's opt-in streaming
@@ -170,7 +189,7 @@ sh ontop/expand.sh < ontop/tiva.r2rml.ttl.in > /tmp/tiva.r2rml.ttl
 ```
 
 The container renders to `/tmp/provider-tiva.r2rml.ttl` on startup, then runs
-Ontop's original entrypoint as the unprivileged `ontop` user. Pass namespace
+provider-ontop's entrypoint as the unprivileged `ontop` user. Pass namespace
 overrides with `docker run -e NS_TIVA_R=https://staging.example.org/tiva/ ...`
 or add them to your Compose/Kubernetes container environment. Host environment
 variables must be explicitly forwarded to a container. An explicit
