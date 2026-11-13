@@ -44,7 +44,7 @@ if sys.argv[1] == 'build':
     def make(self, *args, build_exit='0', resolve_exit='0',
              manifest_status='missing', manifest_error='', extra_env=None):
         environment = dict(os.environ)
-        for name in ['VERSION', 'DATABASE_VERSION', 'DUCKDB_JDBC_VERSION']:
+        for name in ['FORCE', 'VERSION', 'DATABASE_VERSION', 'DUCKDB_JDBC_VERSION']:
             environment.pop(name, None)
         environment.update(extra_env or {})
         return subprocess.run(['make', '--no-print-directory', '-f', str(ENDPOINT / 'Makefile'),
@@ -285,6 +285,38 @@ if sys.argv[1] == 'build':
         self.assertIn('ENDPOINT_VERSION=2.0.0', build['args'])
         self.assertIn('TIVA_VERSION=1.0.0', build['args'])
         self.assertEqual(push['args'], ['push', image])
+
+    def test_force_allows_existing_tag_and_digest(self):
+        result = self.make('publish', 'FORCE=true', manifest_status='present', extra_env={
+            'FAKE_REPO_DIGESTS': 'source/image@sha256:'+'a'*64, 'FAKE_DIGEST_STATUS': 'present'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual([call['args'][0] for call in self.calls()],
+                         ['manifest', 'run', 'build', 'image', 'manifest', 'push'])
+        self.assertIn('permits overwriting', result.stderr)
+        self.assertIn('permits republishing', result.stderr)
+
+    def test_force_does_not_ignore_tag_registry_errors(self):
+        result = self.make('publish', 'FORCE=true', manifest_error='unauthorized: authentication required')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([call['args'][0] for call in self.calls()], ['manifest'])
+
+    def test_force_does_not_ignore_digest_registry_errors(self):
+        result = self.make('publish', 'FORCE=true', extra_env={
+            'FAKE_REPO_DIGESTS': 'source/image@sha256:'+'a'*64,
+            'FAKE_DIGEST_ERROR': 'dial tcp: i/o timeout'})
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls()[-1]['args'][0], 'manifest')
+
+    def test_force_does_not_ignore_build_failure(self):
+        result = self.make('publish', 'FORCE=true', manifest_status='present', build_exit='7')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual([call['args'][0] for call in self.calls()], ['manifest', 'run', 'build'])
+
+    def test_invalid_force_fails_before_docker(self):
+        result = self.make('publish', 'FORCE=yes')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('FORCE must be true or false', result.stderr)
+        self.assertFalse(self.log.exists())
 
 
 if __name__ == '__main__':

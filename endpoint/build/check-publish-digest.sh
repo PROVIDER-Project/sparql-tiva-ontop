@@ -3,6 +3,11 @@
 set -eu
 docker=${1:?Docker executable required}
 image=${2:?Image reference required}
+force=${3:-false}
+case "$force" in
+    true|false) ;;
+    *) printf '%s\n' 'FORCE must be true or false.' >&2; exit 1 ;;
+esac
 report=$(mktemp)
 trap 'rm -f "$report"' EXIT
 trap 'exit 129' HUP
@@ -26,9 +31,14 @@ case "${repository##*/}" in *:*) repository=${repository%:*} ;; esac
 for digest in $digests; do
     reference="$repository@$digest"
     if "$docker" manifest inspect "$reference" >"$report" 2>&1; then
+        if [ "$force" = true ]; then
+            printf '%s\n' "WARNING: FORCE=true permits republishing existing manifest: $reference" >&2
+            continue
+        fi
         printf '%s\n' "Refusing to republish an image manifest already present remotely: $reference" >&2
         printf '%s\n' 'The image was built locally, but nothing was pushed.' >&2
         printf '%s\n' 'Rebuild changed image content before publishing; changing only the tag is not enough.' >&2
+        printf '%s\n' 'To intentionally republish, run make publish FORCE=true.' >&2
         exit 1
     fi
     if LC_ALL=C grep -Eiq '(^|: |\[)(no such manifest:|manifest unknown|MANIFEST_UNKNOWN)' "$report"; then
@@ -39,4 +49,4 @@ for digest in $digests; do
     printf '%s\n' 'Check registry credentials/connectivity and retry; nothing was pushed.' >&2
     exit 1
 done
-printf '%s\n' 'Known image manifest digests are absent from the destination repository.'
+printf '%s\n' 'Known image manifest checks passed.'

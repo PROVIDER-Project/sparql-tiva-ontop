@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Artifacts are resolved by `make resolve` before Docker packaging.
 ARG ENDPOINT_VERSION=0.0.1
 ARG TIVA_VERSION=0.0.1
@@ -15,15 +17,15 @@ RUN zstd --decompress /artifacts/tiva.duckdb.zst -o /artifacts/tiva.duckdb \
     && chmod 0444 /artifacts/tiva.duckdb \
     && touch -d @0 /artifacts/tiva.duckdb
 
-# Stable data layer first, before driver or endpoint-specific configuration.
+# Independent data/JDBC layers survive runtime base changes (Ontop UID/GID 999).
 # This target can also be built/tagged for downstream FROM-based customization.
 FROM ghcr.io/provider-project/provider-ontop:5.5.0-1 AS data-base
-COPY --from=database --chown=ontop:ontop /artifacts/tiva.duckdb /data/tiva.duckdb
-COPY --from=database --chown=ontop:ontop /artifacts/tiva.duckdb.zst.sha1 /opt/ontop/input/
+COPY --link --from=database --chown=999:999 /artifacts/tiva.duckdb /data/tiva.duckdb
+COPY --link --from=database --chown=999:999 /artifacts/tiva.duckdb.zst.sha1 /opt/ontop/input/
 
 FROM data-base AS endpoint-base
-COPY --chown=ontop:ontop target/artifacts/duckdb_jdbc.jar /opt/ontop/jdbc/duckdb_jdbc.jar
-COPY --chown=ontop:ontop target/artifacts/duckdb_jdbc.jar.sha1 /opt/ontop/input/
+COPY --link --chown=999:999 target/artifacts/duckdb_jdbc.jar /opt/ontop/jdbc/duckdb_jdbc.jar
+COPY --link --chown=999:999 target/artifacts/duckdb_jdbc.jar.sha1 /opt/ontop/input/
 
 # Small endpoint-specific layers follow all shared data/runtime layers.
 FROM endpoint-base AS endpoint

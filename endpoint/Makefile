@@ -8,6 +8,7 @@ ENV_FILE ?= $(ENDPOINT_DIR)/.env
 -include $(ENV_FILE)
 
 DOCKER ?= docker
+FORCE ?= false
 PYTHON ?= python3
 # Source the shared shell defaults only when no Make/environment override exists.
 VERSION ?= $(shell . "$(ENDPOINT_DIR)/build.conf"; printf '%s' "$$VERSION")
@@ -35,7 +36,7 @@ COMPOSE = TIVA_IMAGE="$(IMAGE)" ENDPOINT_VERSION="$(VERSION)" \
 
 help: ## Show available targets (the default)
 	@awk 'BEGIN { FS = ":.*## " } /^[[:alnum:]_.-]+:.*## / { printf "make %-24s # %s\n", $$1, $$2 }' "$(ENDPOINT_DIR)/Makefile"
-	printf '\nOverrides: VERSION DATABASE_VERSION DUCKDB_JDBC_VERSION REPOSITORY IMAGE PORT GHCR_USER M2_DIR M2_SETTINGS M2_SECURITY DATABASE_REPOSITORY\n'
+	printf '\nOverrides: FORCE VERSION DATABASE_VERSION DUCKDB_JDBC_VERSION REPOSITORY IMAGE PORT GHCR_USER M2_DIR M2_SETTINGS M2_SECURITY DATABASE_REPOSITORY\n'
 
 show-config: ## Show the selected image, artifact versions and host port
 	@printf '%-22s %s\n' \
@@ -93,10 +94,10 @@ login: ## Log in to GHCR (set GHCR_USER; enter a classic PAT at the password pro
 	@test -n "$(GHCR_USER)" || { printf '%s\n' 'Set GHCR_USER to your personal GitHub username.' >&2; exit 1; }
 	$(DOCKER) login ghcr.io --username "$(GHCR_USER)"
 
-publish: ## Check remote tag and known image digests before pushing
-	sh "$(ENDPOINT_DIR)/build/check-publish-tag.sh" "$(DOCKER)" "$(IMAGE)"
+publish: ## Build and push (FORCE=true allows replacing a published image)
+	sh "$(ENDPOINT_DIR)/build/check-publish-tag.sh" "$(DOCKER)" "$(IMAGE)" "$(FORCE)"
 	$(MAKE) --no-print-directory -C "$(ENDPOINT_DIR)" build
-	sh "$(ENDPOINT_DIR)/build/check-publish-digest.sh" "$(DOCKER)" "$(IMAGE)"
+	sh "$(ENDPOINT_DIR)/build/check-publish-digest.sh" "$(DOCKER)" "$(IMAGE)" "$(FORCE)"
 	$(DOCKER) push "$(IMAGE)"
 
 up: build ## Build and start the local Compose service on PORT

@@ -80,7 +80,7 @@ make login GHCR_USER=YOUR_GITHUB_USERNAME
 make publish VERSION=0.0.2 DATABASE_VERSION=0.0.1
 ```
 
-`publish` first checks the exact remote `IMAGE`. An existing tag stops publication
+`publish` first checks the exact remote `IMAGE`. By default, an existing tag stops publication
 with instructions to change `VERSION` in `build.conf` or pass `VERSION=...`.
 Authentication/network errors also stop it; only an explicit missing manifest
 allows building and pushing. This is best-effort: a concurrent publisher can
@@ -92,6 +92,10 @@ It does not compare local image IDs with registry manifest digests. If Docker
 has no local manifest digest, this best-effort check is skipped with a message.
 This is exact-manifest detection, not a comparison of equivalent filesystem
 contents; changed labels or build attestations can produce different digests.
+
+For an intentional replacement, use `make publish FORCE=true`. This allows
+existing tags and manifest digests, with a warning; build failures and registry
+errors still stop publication. The default is `FORCE=false`.
 
 `build` freely replaces the local image and performs neither registry check.
 Authenticate with a GitHub token that can write packages and choose public package visibility if
@@ -111,6 +115,12 @@ JDBC, mappings and configuration. Ontop runs as a non-root user; DuckDB is
 read-only and spill files use `/tmp/duckdb`. Allow space for the expanded
 database, temporary files, runtime and build cache. The previous raw TiVA database
 was about 13 GB.
+
+Database and JDBC files use BuildKit's `COPY --link` with numeric ownership
+(`999:999`, Ontop's user/group), so updating the runtime base can reuse those
+layers. File timestamps are normalized during resolution/extraction. An initial
+migration can still upload new layers; subsequent pushes to the same repository
+reuse matching blobs already present there.
 
 Maven downloads live in `.cache/maven/repository`; staged files live in
 `target/artifacts`. Docker manages image layers and its build cache separately.

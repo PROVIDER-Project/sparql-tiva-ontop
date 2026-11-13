@@ -3,6 +3,11 @@
 set -eu
 docker=${1:?Docker executable required}
 image=${2:?Image reference required}
+force=${3:-false}
+case "$force" in
+    true|false) ;;
+    *) printf '%s\n' 'FORCE must be true or false.' >&2; exit 1 ;;
+esac
 endpoint_dir=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 report=$(mktemp)
 trap 'rm -f "$report"' EXIT
@@ -11,10 +16,15 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if "$docker" manifest inspect "$image" >"$report" 2>&1; then
+    if [ "$force" = true ]; then
+        printf '%s\n' "WARNING: FORCE=true permits overwriting existing remote image: $image" >&2
+        exit 0
+    fi
     printf '%s\n' "Refusing to overwrite existing remote image: $image" >&2
     printf '%s\n' "Set a new VERSION in $endpoint_dir/build.conf, or run:" >&2
     printf '  make -C "%s" publish VERSION=NEW_VERSION\n' "$endpoint_dir" >&2
     printf '%s\n' 'If IMAGE is explicitly overridden, choose a new tag in IMAGE too.' >&2
+    printf '%s\n' 'To intentionally overwrite this tag, run make publish FORCE=true.' >&2
     exit 1
 fi
 
